@@ -1,0 +1,10 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.asteroidos.externalappmessages.interfaces.Receiver">
+    <method name="pushMessage">
+      <arg name="source" type="s" direction="in"/>
+      <arg name="ID" type="s" direction="in"/>
+      <arg name="body" type="s" direction="in"/>
+    </method>
+  </interface>
+</node>
