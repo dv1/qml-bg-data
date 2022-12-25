@@ -15,6 +15,18 @@ namespace {
 QString const DBUS_SERVICE_NAME = "org.asteroidos.externalappmessages.SGVDataReceiver";
 QString const DBUS_OBJECT_PATH = "/org/asteroidos/externalappmessages/SGVDataReceiver";
 
+enum class MessageID
+{
+	NEW_SGV_DATA,
+	SGV_DATA_UPDATE
+};
+
+template<typename T>
+QVariant toQVariant(std::optional<T> const &optValue)
+{
+	return optValue.has_value() ? QVariant::fromValue(*optValue) : QVariant();
+}
+
 } // unnamed namespace end
 
 
@@ -43,39 +55,27 @@ SGVDataReceiver::SGVDataReceiver(QObject *parent)
 }
 
 
-QString SGVDataReceiver::unit() const
+QVariant SGVDataReceiver::unit() const
 {
-	return m_unitIsMGDL ? "mg/dL" : "mmol/L";
+	return m_unitIsMGDL.has_value() ? QVariant((*m_unitIsMGDL) ? "mg/dL" : "mmol/L") : QVariant();
 }
 
 
-int SGVDataReceiver::sgv() const
+QVariant SGVDataReceiver::sgv() const
 {
-	return m_sgv;
+	return toQVariant(m_sgv);
 }
 
 
-int SGVDataReceiver::delta() const
+QVariant SGVDataReceiver::insulinOnBoard() const
 {
-	return m_delta;
+	return toQVariant(m_iob);
 }
 
 
-InsulinOnBoard const & SGVDataReceiver::insulinOnBoard() const
+QVariant SGVDataReceiver::carbsOnBoard() const
 {
-	return m_iob;
-}
-
-
-CarbsOnBoard const & SGVDataReceiver::carbsOnBoard() const
-{
-	return m_cob;
-}
-
-
-QDateTime const & SGVDataReceiver::lastSgvTime() const
-{
-	return m_lastSgvTime;
+	return toQVariant(m_cob);
 }
 
 
@@ -85,13 +85,13 @@ QDateTime const & SGVDataReceiver::lastLoopRunTime() const
 }
 
 
-BasalRate const & SGVDataReceiver::basalRate() const
+QVariant SGVDataReceiver::basalRate() const
 {
-	return m_basalRate;
+	return toQVariant(m_basalRate);
 }
 
 
-QVariantList const & SGVDataReceiver::graph() const
+Graph const & SGVDataReceiver::graph() const
 {
 	return m_graph;
 }
@@ -99,7 +99,13 @@ QVariantList const & SGVDataReceiver::graph() const
 
 void SGVDataReceiver::pushMessage(QString source, QString ID, QString body)
 {
-	if (ID != "SGVData")
+	MessageID messageID;
+
+	if (ID == "NewSGVData")
+		messageID = MessageID::NEW_SGV_DATA;
+	else if (ID == "SGVDataUpdate")
+		messageID = MessageID::SGV_DATA_UPDATE;
+	else
 	{
 		qCDebug(lcQmlSgvData) << "Got message from source"
 			<< source << "with unsupported ID" << ID
@@ -115,7 +121,33 @@ void SGVDataReceiver::pushMessage(QString source, QString ID, QString body)
 		return;
 	}
 
-	update(document.object());
+	switch (messageID)
+	{
+		case MessageID::NEW_SGV_DATA:
+			resetQuantities();
+			update(document.object());
+			break;
+
+		case MessageID::SGV_DATA_UPDATE:
+			update(document.object());
+			break;
+
+		default:
+			qCCritical(lcQmlSgvData) << "Missing code for handling message with ID" << ID;
+			break;
+	}
+}
+
+
+void SGVDataReceiver::resetQuantities()
+{
+	m_unitIsMGDL = std::nullopt;
+	m_sgv = std::nullopt;
+	m_iob = std::nullopt;
+	m_cob = std::nullopt;
+	m_lastLoopRunTime = QDateTime();
+	m_basalRate = std::nullopt;
+	m_graph = Graph();
 }
 
 
@@ -136,72 +168,115 @@ void SGVDataReceiver::update(QJsonObject const &json)
 		emit unitChanged();
 	});
 
-	readFromJSON<int>(json, "sgv", [this](int sgv) {
-		if (m_sgv == sgv)
-			return;
-
-		m_sgv = sgv;
-		qCDebug(lcQmlSgvData) << "SGV changed:" << sgv;
-		emit sgvChanged();
-	});
-
-	readFromJSON<int>(json, "delta", [this](int delta) {
-		if (m_delta == delta)
-			return;
-
-		m_delta = delta;
-		qCDebug(lcQmlSgvData) << "Delta changed:" << delta;
-		emit deltaChanged();
-	});
-
-	readFromJSON<QJsonObject>(json, "iob", [this](QJsonObject const &iobJson) {
+	readFromJSON<QJsonObject>(json, "sgv", [this](QJsonObject sgvJson) {
 		bool changed = false;
+		if (!m_sgv.has_value())
+		{
+			changed = true;
+			m_sgv = SGV();
+		}
 
-		readFromJSON<float>(iobJson, "basal", [this, &changed](float basal) {
-			changed = changed || (m_iob.m_basal != basal);
-			m_iob.m_basal = basal;
+		readFromJSON<int>(sgvJson, "sgv", [this, &changed](int sgv) {
+			changed = changed || (m_sgv->m_sgv != sgv);
+			m_sgv->m_sgv = sgv;
 		});
 
-		readFromJSON<float>(iobJson, "bolus", [this, &changed](float bolus) {
-			changed = changed || (m_iob.m_bolus != bolus);
-			m_iob.m_bolus = bolus;
+		readFromJSON<bool>(sgvJson, "isValid", [this, &changed](bool isValid) {
+			changed = changed || (m_sgv->m_isValid != isValid);
+			m_sgv->m_isValid = isValid;
+		});
+
+		readFromJSON<QString>(sgvJson, "trendArrow", [this, &changed](QString trendArrowStr) {
+			TrendArrow trendArrow;
+			bool validValue = true;
+
+			if      (trendArrowStr == "none")          trendArrow = TrendArrow::NONE;
+			else if (trendArrowStr == "tripleUp")      trendArrow = TrendArrow::TRIPLE_UP;
+			else if (trendArrowStr == "doubleUp")      trendArrow = TrendArrow::DOUBLE_UP;
+			else if (trendArrowStr == "singleUp")      trendArrow = TrendArrow::SINGLE_UP;
+			else if (trendArrowStr == "fortyFiveUp")   trendArrow = TrendArrow::FORTY_FIVE_UP;
+			else if (trendArrowStr == "flat")          trendArrow = TrendArrow::FLAT;
+			else if (trendArrowStr == "fortyFiveDown") trendArrow = TrendArrow::FORTY_FIVE_DOWN;
+			else if (trendArrowStr == "singleDown")    trendArrow = TrendArrow::SINGLE_DOWN;
+			else if (trendArrowStr == "doubleDown")    trendArrow = TrendArrow::DOUBLE_DOWN;
+			else if (trendArrowStr == "tripleDown")    trendArrow = TrendArrow::TRIPLE_DOWN;
+			else validValue = false;
+
+			if (validValue)
+			{
+				changed = changed || (m_sgv->m_trendArrow != trendArrow);
+				m_sgv->m_trendArrow = trendArrow;
+			}
+			else
+				qCWarning(lcQmlSgvData) << "Skipping invalid trendArrow value" << trendArrowStr;
+		});
+
+		readFromJSON<int>(sgvJson, "delta", [this, &changed](int delta) {
+			changed = changed || (m_sgv->m_delta != delta);
+			m_sgv->m_delta = delta;
+		});
+
+		readFromJSON<qint64>(sgvJson, "lastTime", [this, &changed](qint64 lastTimeInt) {
+			auto lastTime = QDateTime::fromSecsSinceEpoch(lastTimeInt, Qt::UTC);
+			changed = changed || (m_sgv->m_lastTime != lastTime);
+			m_sgv->m_lastTime = lastTime;
 		});
 
 		if (changed)
 		{
-			qCDebug(lcQmlSgvData) << "IOB changed: basal" << m_iob.m_basal << "bolus" << m_iob.m_bolus;
+			qCDebug(lcQmlSgvData) << "SGV changed";
+			emit sgvChanged();
+		}
+	});
+
+	readFromJSON<QJsonObject>(json, "iob", [this](QJsonObject const &iobJson) {
+		bool changed = false;
+		if (!m_iob.has_value())
+		{
+			changed = true;
+			m_iob = InsulinOnBoard();
+		}
+
+		readFromJSON<float>(iobJson, "basal", [this, &changed](float basal) {
+			changed = changed || (m_iob->m_basal != basal);
+			m_iob->m_basal = basal;
+		});
+
+		readFromJSON<float>(iobJson, "bolus", [this, &changed](float bolus) {
+			changed = changed || (m_iob->m_bolus != bolus);
+			m_iob->m_bolus = bolus;
+		});
+
+		if (changed)
+		{
+			qCDebug(lcQmlSgvData) << "IOB changed: basal" << m_iob->m_basal << "bolus" << m_iob->m_bolus;
 			emit insulinOnBoardChanged();
 		}
 	});
 
 	readFromJSON<QJsonObject>(json, "cob", [this](QJsonObject const &cobJson) {
 		bool changed = false;
+		if (!m_iob.has_value())
+		{
+			changed = true;
+			m_cob = CarbsOnBoard();
+		}
 
 		readFromJSON<int>(cobJson, "current", [this, &changed](int current) {
-			changed = changed || (m_cob.m_current != current);
-			m_cob.m_current = current;
+			changed = changed || (m_cob->m_current != current);
+			m_cob->m_current = current;
 		});
 
 		readFromJSON<int>(cobJson, "future", [this, &changed](int future) {
-			changed = changed || (m_cob.m_future != future);
-			m_cob.m_future = future;
+			changed = changed || (m_cob->m_future != future);
+			m_cob->m_future = future;
 		});
 
 		if (changed)
 		{
-			qCDebug(lcQmlSgvData) << "COB changed: current" << m_cob.m_current << "future" << m_cob.m_future;
+			qCDebug(lcQmlSgvData) << "COB changed: current" << m_cob->m_current << "future" << m_cob->m_future;
 			emit carbsOnBoardChanged();
 		}
-	});
-
-	readFromJSON<qint64>(json, "lastSgvTime", [this](qint64 lastSgvTimeInt) {
-		auto lastSgvTime = QDateTime::fromSecsSinceEpoch(lastSgvTimeInt, Qt::UTC);
-		if (m_lastSgvTime == lastSgvTime)
-			return;
-
-		m_lastSgvTime = lastSgvTime;
-		qCDebug(lcQmlSgvData) << "lastSgvTime changed:" << lastSgvTime;
-		emit lastSgvTimeChanged();
 	});
 
 	readFromJSON<qint64>(json, "lastLoopRunTime", [this](qint64 lastLoopRunTimeInt) {
@@ -216,30 +291,40 @@ void SGVDataReceiver::update(QJsonObject const &json)
 
 	readFromJSON<QJsonObject>(json, "basalRate", [this](QJsonObject const &basalRateJson) {
 		bool changed = false;
+		if (!m_basalRate.has_value())
+		{
+			changed = true;
+			m_basalRate = BasalRate();
+		}
 
 		readFromJSON<float>(basalRateJson, "baseRate", [this, &changed](float baseRate) {
-			changed = changed || (m_basalRate.m_baseRate != baseRate);
-			m_basalRate.m_baseRate = baseRate;
+			changed = changed || (m_basalRate->m_baseRate != baseRate);
+			m_basalRate->m_baseRate = baseRate;
 		});
 
 		readFromJSON<int>(basalRateJson, "percentage", [this, &changed](int percentage) {
-			changed = changed || (m_basalRate.m_percentage != percentage);
-			m_basalRate.m_percentage = percentage;
+			changed = changed || (m_basalRate->m_percentage != percentage);
+			m_basalRate->m_percentage = percentage;
 		});
 
 		if (changed)
 		{
-			qCDebug(lcQmlSgvData) << "Basal rate changed: baseRate" << m_basalRate.m_baseRate << "percentage" << m_basalRate.m_percentage;
+			qCDebug(lcQmlSgvData) << "Basal rate changed: baseRate" << m_basalRate->m_baseRate << "percentage" << m_basalRate->m_percentage;
 			emit basalRateChanged();
 		}
 	});
 
-	readFromJSON<QJsonArray>(json, "graph", [this](QJsonArray const &graphJson) {
-		QVariantList newGraph = graphJson.toVariantList();
-		if (m_graph == newGraph)
-			return;
+	readFromJSON<QJsonObject>(json, "graph", [this](QJsonObject const &graphJson) {
+		readFromJSON<QJsonArray>(graphJson, "bgValues", [this](QJsonArray const &bgValuesJson) {
+			QVariantList bgValues = bgValuesJson.toVariantList();
+			m_graph.m_bgValues = std::move(bgValues);
+		});
 
-		m_graph = std::move(newGraph);
+		readFromJSON<QJsonArray>(graphJson, "bgTimestamps", [this](QJsonArray const &bgTimestampsJson) {
+			QVariantList bgTimestamps = bgTimestampsJson.toVariantList();
+			m_graph.m_bgTimestamps = std::move(bgTimestamps);
+		});
+
 		qCDebug(lcQmlSgvData) << "Graph changed";
 		emit graphChanged();
 	});

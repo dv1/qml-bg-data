@@ -46,6 +46,17 @@ struct ReadFromJSONHelper<float, Func>
 };
 
 template <typename Func>
+struct ReadFromJSONHelper<bool, Func>
+{
+	void operator()(QJsonObject const &json, QString const &valueName, Func const &func) const
+	{
+		QJsonValue value = json[valueName];
+		if (value.type() == QJsonValue::Bool)
+			func(value.toBool());
+	}
+};
+
+template <typename Func>
 struct ReadFromJSONHelper<QString, Func>
 {
 	void operator()(QJsonObject const &json, QString const &valueName, Func const &func) const
