@@ -2,23 +2,23 @@
 #include <QDBusConnection>
 #include <QLoggingCategory>
 
-#include "sgvdatareceiver.hpp"
+#include "bgdatareceiver.hpp"
 #include "jsonhelper.hpp"
 #include "extappmsgreceiverifaceadaptor.h"
 
 
-Q_DECLARE_LOGGING_CATEGORY(lcQmlSgvData)
+Q_DECLARE_LOGGING_CATEGORY(lcQmlBgData)
 
 
 namespace {
 
-QString const DBUS_SERVICE_NAME = "org.asteroidos.externalappmessages.SGVDataReceiver";
-QString const DBUS_OBJECT_PATH = "/org/asteroidos/externalappmessages/SGVDataReceiver";
+QString const DBUS_SERVICE_NAME = "org.asteroidos.externalappmessages.BGDataReceiver";
+QString const DBUS_OBJECT_PATH = "/org/asteroidos/externalappmessages/BGDataReceiver";
 
 enum class MessageID
 {
-	NEW_SGV_DATA,
-	SGV_DATA_UPDATE
+	NEW_BG_DATA,
+	BG_DATA_UPDATE
 };
 
 template<typename T>
@@ -30,7 +30,7 @@ QVariant toQVariant(std::optional<T> const &optValue)
 } // unnamed namespace end
 
 
-SGVDataReceiver::SGVDataReceiver(QObject *parent)
+BGDataReceiver::BGDataReceiver(QObject *parent)
 	: QObject(parent)
 {
 	// The adaptor is automatically destroyed by the QObject destructor.
@@ -41,108 +41,118 @@ SGVDataReceiver::SGVDataReceiver(QObject *parent)
 
 	if (!systemBus.registerService(DBUS_SERVICE_NAME))
 	{
-		qCWarning(lcQmlSgvData)
+		qCWarning(lcQmlBgData)
 			<< "Unable to register D-Bus service" << DBUS_SERVICE_NAME << ":"
 			<< systemBus.lastError().message();
 	}
 
 	if (!systemBus.registerObject(DBUS_OBJECT_PATH, this))
 	{
-		qCWarning(lcQmlSgvData)
+		qCWarning(lcQmlBgData)
 			<< "Unable to register object at path " << DBUS_OBJECT_PATH << ":"
 			<< systemBus.lastError().message();
 	}
 }
 
 
-QVariant SGVDataReceiver::unit() const
+QVariant BGDataReceiver::unit() const
 {
 	return m_unitIsMGDL.has_value() ? QVariant((*m_unitIsMGDL) ? "mg/dL" : "mmol/L") : QVariant();
 }
 
 
-QVariant SGVDataReceiver::sgv() const
+QVariant BGDataReceiver::bgStatus() const
 {
-	return toQVariant(m_sgv);
+	return toQVariant(m_bgStatus);
 }
 
 
-QVariant SGVDataReceiver::insulinOnBoard() const
+QVariant BGDataReceiver::insulinOnBoard() const
 {
 	return toQVariant(m_iob);
 }
 
 
-QVariant SGVDataReceiver::carbsOnBoard() const
+QVariant BGDataReceiver::carbsOnBoard() const
 {
 	return toQVariant(m_cob);
 }
 
 
-QDateTime const & SGVDataReceiver::lastLoopRunTime() const
+QDateTime const & BGDataReceiver::lastLoopRunTime() const
 {
 	return m_lastLoopRunTime;
 }
 
 
-QVariant SGVDataReceiver::basalRate() const
+QVariant BGDataReceiver::basalRate() const
 {
 	return toQVariant(m_basalRate);
 }
 
 
-Graph const & SGVDataReceiver::graph() const
+Graph const & BGDataReceiver::graph() const
 {
 	return m_graph;
 }
 
 
-void SGVDataReceiver::pushMessage(QString source, QString ID, QString body)
+void BGDataReceiver::pushMessage(QString source, QString ID, QString body)
 {
 	MessageID messageID;
 
-	if (ID == "NewSGVData")
-		messageID = MessageID::NEW_SGV_DATA;
-	else if (ID == "SGVDataUpdate")
-		messageID = MessageID::SGV_DATA_UPDATE;
+	if (ID == "NewBGData")
+		messageID = MessageID::NEW_BG_DATA;
+	else if (ID == "BGDataUpdate")
+		messageID = MessageID::BG_DATA_UPDATE;
 	else
 	{
-		qCDebug(lcQmlSgvData) << "Got message from source"
+		qCDebug(lcQmlBgData) << "Got message from source"
 			<< source << "with unsupported ID" << ID
 			<< "; we do not handle such messages; ignoring";
 		return;
 	}
 
+	qCDebug(lcQmlBgData) << "Got message with source" << source << "ID" << ID << "body" << body;
+
 	QJsonParseError parseError;
 	auto document = QJsonDocument::fromJson(body.toUtf8(), &parseError);
 	if (document.isNull())
 	{
-		qCWarning(lcQmlSgvData) << "Could not parse incoming JSON:" << parseError.errorString();
+		qCWarning(lcQmlBgData) << "Could not parse incoming JSON:" << parseError.errorString();
 		return;
 	}
 
 	switch (messageID)
 	{
-		case MessageID::NEW_SGV_DATA:
+		case MessageID::NEW_BG_DATA:
+		{
 			resetQuantities();
-			update(document.object());
-			break;
 
-		case MessageID::SGV_DATA_UPDATE:
+			QJsonObject rootObject = document.object();
+			if (rootObject.isEmpty())
+				emit allQuantitiesCleared();
+			else
+				update(rootObject);
+
+			break;
+		}
+
+		case MessageID::BG_DATA_UPDATE:
 			update(document.object());
 			break;
 
 		default:
-			qCCritical(lcQmlSgvData) << "Missing code for handling message with ID" << ID;
+			qCCritical(lcQmlBgData) << "Missing code for handling message with ID" << ID;
 			break;
 	}
 }
 
 
-void SGVDataReceiver::resetQuantities()
+void BGDataReceiver::resetQuantities()
 {
 	m_unitIsMGDL = std::nullopt;
-	m_sgv = std::nullopt;
+	m_bgStatus = std::nullopt;
 	m_iob = std::nullopt;
 	m_cob = std::nullopt;
 	m_lastLoopRunTime = QDateTime();
@@ -151,7 +161,7 @@ void SGVDataReceiver::resetQuantities()
 }
 
 
-void SGVDataReceiver::update(QJsonObject const &json)
+void BGDataReceiver::update(QJsonObject const &json)
 {
 	emit updateStarted();
 
@@ -164,29 +174,31 @@ void SGVDataReceiver::update(QJsonObject const &json)
 			return;
 
 		m_unitIsMGDL = unitIsMGDL;
-		qCDebug(lcQmlSgvData) << "Unit changed:" << unit;
+		qCDebug(lcQmlBgData) << "Unit changed:" << unit;
 		emit unitChanged();
 	});
 
-	readFromJSON<QJsonObject>(json, "sgv", [this](QJsonObject sgvJson) {
+	readFromJSON<QJsonObject>(json, "bgStatus", [this](QJsonObject bgStatusJson) {
 		bool changed = false;
-		if (!m_sgv.has_value())
+
+		// Initialize m_bgStatus if we haven't done so already.
+		if (!m_bgStatus.has_value())
 		{
 			changed = true;
-			m_sgv = SGV();
+			m_bgStatus = BGStatus();
 		}
 
-		readFromJSON<int>(sgvJson, "sgv", [this, &changed](int sgv) {
-			changed = changed || (m_sgv->m_sgv != sgv);
-			m_sgv->m_sgv = sgv;
+		readFromJSON<float>(bgStatusJson, "bgValue", [this, &changed](float bgValue) {
+			changed = changed || (m_bgStatus->m_bgValue != bgValue);
+			m_bgStatus->m_bgValue = bgValue;
 		});
 
-		readFromJSON<bool>(sgvJson, "isValid", [this, &changed](bool isValid) {
-			changed = changed || (m_sgv->m_isValid != isValid);
-			m_sgv->m_isValid = isValid;
+		readFromJSON<bool>(bgStatusJson, "isValid", [this, &changed](bool isValid) {
+			changed = changed || (m_bgStatus->m_isValid != isValid);
+			m_bgStatus->m_isValid = isValid;
 		});
 
-		readFromJSON<QString>(sgvJson, "trendArrow", [this, &changed](QString trendArrowStr) {
+		readFromJSON<QString>(bgStatusJson, "trendArrow", [this, &changed](QString trendArrowStr) {
 			TrendArrow trendArrow;
 			bool validValue = true;
 
@@ -204,28 +216,28 @@ void SGVDataReceiver::update(QJsonObject const &json)
 
 			if (validValue)
 			{
-				changed = changed || (m_sgv->m_trendArrow != trendArrow);
-				m_sgv->m_trendArrow = trendArrow;
+				changed = changed || (m_bgStatus->m_trendArrow != trendArrow);
+				m_bgStatus->m_trendArrow = trendArrow;
 			}
 			else
-				qCWarning(lcQmlSgvData) << "Skipping invalid trendArrow value" << trendArrowStr;
+				qCWarning(lcQmlBgData) << "Skipping invalid trendArrow value" << trendArrowStr;
 		});
 
-		readFromJSON<int>(sgvJson, "delta", [this, &changed](int delta) {
-			changed = changed || (m_sgv->m_delta != delta);
-			m_sgv->m_delta = delta;
+		readFromJSON<float>(bgStatusJson, "delta", [this, &changed](float delta) {
+			changed = changed || (m_bgStatus->m_delta != delta); // TODO epsilon
+			m_bgStatus->m_delta = delta;
 		});
 
-		readFromJSON<qint64>(sgvJson, "lastTime", [this, &changed](qint64 lastTimeInt) {
-			auto lastTime = QDateTime::fromSecsSinceEpoch(lastTimeInt, Qt::UTC);
-			changed = changed || (m_sgv->m_lastTime != lastTime);
-			m_sgv->m_lastTime = lastTime;
+		readFromJSON<qint64>(bgStatusJson, "timestamp", [this, &changed](qint64 timestampInt) {
+			auto timestamp = QDateTime::fromSecsSinceEpoch(timestampInt, Qt::UTC);
+			changed = changed || (m_bgStatus->m_timestamp != timestamp);
+			m_bgStatus->m_timestamp = timestamp;
 		});
 
 		if (changed)
 		{
-			qCDebug(lcQmlSgvData) << "SGV changed";
-			emit sgvChanged();
+			qCDebug(lcQmlBgData) << "BG status changed";
+			emit bgStatusChanged();
 		}
 	});
 
@@ -249,7 +261,7 @@ void SGVDataReceiver::update(QJsonObject const &json)
 
 		if (changed)
 		{
-			qCDebug(lcQmlSgvData) << "IOB changed: basal" << m_iob->m_basal << "bolus" << m_iob->m_bolus;
+			qCDebug(lcQmlBgData) << "IOB changed: basal" << m_iob->m_basal << "bolus" << m_iob->m_bolus;
 			emit insulinOnBoardChanged();
 		}
 	});
@@ -274,7 +286,7 @@ void SGVDataReceiver::update(QJsonObject const &json)
 
 		if (changed)
 		{
-			qCDebug(lcQmlSgvData) << "COB changed: current" << m_cob->m_current << "future" << m_cob->m_future;
+			qCDebug(lcQmlBgData) << "COB changed: current" << m_cob->m_current << "future" << m_cob->m_future;
 			emit carbsOnBoardChanged();
 		}
 	});
@@ -285,7 +297,7 @@ void SGVDataReceiver::update(QJsonObject const &json)
 			return;
 
 		m_lastLoopRunTime = lastLoopRunTime;
-		qCDebug(lcQmlSgvData) << "lastLoopRunTime changed:" << lastLoopRunTime;
+		qCDebug(lcQmlBgData) << "lastLoopRunTime changed:" << lastLoopRunTime;
 		emit lastLoopRunTimeChanged();
 	});
 
@@ -309,7 +321,7 @@ void SGVDataReceiver::update(QJsonObject const &json)
 
 		if (changed)
 		{
-			qCDebug(lcQmlSgvData) << "Basal rate changed: baseRate" << m_basalRate->m_baseRate << "percentage" << m_basalRate->m_percentage;
+			qCDebug(lcQmlBgData) << "Basal rate changed: baseRate" << m_basalRate->m_baseRate << "percentage" << m_basalRate->m_percentage;
 			emit basalRateChanged();
 		}
 	});
@@ -325,7 +337,7 @@ void SGVDataReceiver::update(QJsonObject const &json)
 			m_graph.m_bgTimestamps = std::move(bgTimestamps);
 		});
 
-		qCDebug(lcQmlSgvData) << "Graph changed";
+		qCDebug(lcQmlBgData) << "Graph changed";
 		emit graphChanged();
 	});
 

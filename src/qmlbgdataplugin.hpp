@@ -1,20 +1,20 @@
-#ifndef QMLSGVDATAPLUGIN_HPP
-#define QMLSGVDATAPLUGIN_HPP
+#ifndef QMLBGDATAPLUGIN_HPP
+#define QMLBGDATAPLUGIN_HPP
 
 #include <QQmlExtensionPlugin>
 
 
 /// Main entrypoint class for the QML plugin
-class QmlSgvDataPlugin
+class QmlBgDataPlugin
 	: public QQmlExtensionPlugin
 {
 	Q_OBJECT
 	Q_PLUGIN_METADATA(IID QQmlExtensionInterface_iid)
 
 public:
-	explicit QmlSgvDataPlugin(QObject *parent = nullptr);
+	explicit QmlBgDataPlugin(QObject *parent = nullptr);
 	void registerTypes(char const *uri) override;
 };
 
 
-#endif // QMLSGVDATAPLUGIN_HPP
+#endif // QMLBGDATAPLUGIN_HPP

@@ -1,5 +1,5 @@
-#ifndef SGVDATARECEIVER_HPP
-#define SGVDATARECEIVER_HPP
+#ifndef BGDATARECEIVER_HPP
+#define BGDATARECEIVER_HPP
 
 #include <optional>
 #include <QObject>
@@ -22,24 +22,24 @@ enum class TrendArrow
 	TRIPLE_DOWN
 };
 
-struct SGV
+struct BGStatus
 {
 	Q_GADGET
 
 	Q_ENUM(TrendArrow)
 
-	Q_PROPERTY(int sgv MEMBER m_sgv)
+	Q_PROPERTY(int bgValue MEMBER m_bgValue)
+	Q_PROPERTY(float delta MEMBER m_delta)
 	Q_PROPERTY(bool isValid MEMBER m_isValid)
+	Q_PROPERTY(QDateTime timestamp MEMBER m_timestamp)
 	Q_PROPERTY(TrendArrow trendArrow MEMBER m_trendArrow)
-	Q_PROPERTY(int delta MEMBER m_delta)
-	Q_PROPERTY(QDateTime lastTime MEMBER m_lastTime)
 
 public:
-	int m_sgv = 0;
+	int m_bgValue = 0;
+	float m_delta = 0;
 	bool m_isValid = false;
+	QDateTime m_timestamp;
 	TrendArrow m_trendArrow = TrendArrow::NONE;
-	int m_delta = 0;
-	QDateTime m_lastTime;
 };
 
 struct InsulinOnBoard
@@ -71,10 +71,12 @@ struct BasalRate
 	Q_GADGET
 
 	Q_PROPERTY(float baseRate MEMBER m_baseRate)
+	Q_PROPERTY(float currentRate MEMBER m_currentRate)
 	Q_PROPERTY(int percentage MEMBER m_percentage)
 
 public:
 	float m_baseRate = 0.0f;
+	float m_currentRate = 0.0f;
 	int m_percentage = 100;
 };
 
@@ -90,14 +92,14 @@ public:
 	QVariantList m_bgTimestamps;
 };
 
-class SGVDataReceiver
+class BGDataReceiver
 	: public QObject
 {
 public:
 	Q_OBJECT
 
 	Q_PROPERTY(QVariant unit READ unit NOTIFY unitChanged)
-	Q_PROPERTY(QVariant sgv READ sgv NOTIFY sgvChanged)
+	Q_PROPERTY(QVariant bgStatus READ bgStatus NOTIFY bgStatusChanged)
 	Q_PROPERTY(QVariant insulinOnBoard READ insulinOnBoard NOTIFY insulinOnBoardChanged)
 	Q_PROPERTY(QVariant carbsOnBoard READ carbsOnBoard NOTIFY carbsOnBoardChanged)
 	Q_PROPERTY(QVariant lastLoopRunTime READ lastLoopRunTime NOTIFY lastLoopRunTimeChanged)
@@ -105,10 +107,10 @@ public:
 	Q_PROPERTY(Graph const & graph READ graph NOTIFY graphChanged)
 
 public:
-	explicit SGVDataReceiver(QObject *parent = nullptr);
+	explicit BGDataReceiver(QObject *parent = nullptr);
 
 	QVariant unit() const;
-	QVariant sgv() const;
+	QVariant bgStatus() const;
 	QVariant insulinOnBoard() const;
 	QVariant carbsOnBoard() const;
 	QDateTime const & lastLoopRunTime() const;
@@ -119,8 +121,10 @@ signals:
 	void updateStarted();
 	void updateEnded();
 
+	void allQuantitiesCleared();
+
 	void unitChanged();
-	void sgvChanged();
+	void bgStatusChanged();
 	void insulinOnBoardChanged();
 	void carbsOnBoardChanged();
 	void lastLoopRunTimeChanged();
@@ -137,7 +141,7 @@ private:
 	void update(QJsonObject const &json);
 
 	std::optional<bool> m_unitIsMGDL;
-	std::optional<SGV> m_sgv;
+	std::optional<BGStatus> m_bgStatus;
 	std::optional<InsulinOnBoard> m_iob;
 	std::optional<CarbsOnBoard> m_cob;
 	QDateTime m_lastLoopRunTime;
@@ -145,4 +149,4 @@ private:
 	Graph m_graph;
 };
 
-#endif // SGVDATARECEIVER_HPP
+#endif // BGDATARECEIVER_HPP

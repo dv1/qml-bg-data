@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.8.0)
 
-project(qmlsgvdata
+project(qmlbgdata
 	VERSION 0.0.1
 	LANGUAGES CXX
-	DESCRIPTION "QML plugin for receiving sensor glucose value (SGV) data over D-Bus")
+	DESCRIPTION "QML plugin for receiving blood glucose (BG) data over D-Bus")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,18 +16,18 @@ include(FindPkgConfig)
 
 find_package(Qt5 COMPONENTS Core DBus Qml REQUIRED)
 
-set(qmlsgvdata_SOURCES
-	src/sgvdatareceiver.cpp
-	src/sgvdatareceiver.hpp
-	src/qmlsgvdataplugin.hpp
-	src/qmlsgvdataplugin.cpp
+set(qmlbgdata_SOURCES
+	src/bgdatareceiver.cpp
+	src/bgdatareceiver.hpp
+	src/qmlbgdataplugin.hpp
+	src/qmlbgdataplugin.cpp
 )
 
-qt5_add_dbus_adaptor(qmlsgvdata_SOURCES src/extappmsgreceiveriface.xml src/sgvdatareceiver.hpp SGVDataReceiver)
+qt5_add_dbus_adaptor(qmlbgdata_SOURCES src/extappmsgreceiveriface.xml src/bgdatareceiver.hpp BGDataReceiver)
 
-add_library(qmlsgvdata SHARED ${qmlsgvdata_SOURCES})
-target_link_libraries(qmlsgvdata Qt5::Core Qt5::DBus Qt5::Qml)
-target_compile_options(qmlsgvdata PRIVATE -Wextra -Wall -pedantic)
+add_library(qmlbgdata SHARED ${qmlbgdata_SOURCES})
+target_link_libraries(qmlbgdata Qt5::Core Qt5::DBus Qt5::Qml)
+target_compile_options(qmlbgdata PRIVATE -Wextra -Wall -pedantic)
 
 set(PLUGIN_PATH ${QT_DIR}/../../../qml/${PROJECT_NAME})
 

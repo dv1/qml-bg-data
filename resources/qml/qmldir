@@ -1,2 +1,2 @@
-module QmlSgvData
-plugin qmlsgvdata
+module QmlBgData
+plugin qmlbgdata

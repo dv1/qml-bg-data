@@ -5,25 +5,25 @@
 #include <QtQml>
 #include <QLoggingCategory>
 
-#include "qmlsgvdataplugin.hpp"
-#include "sgvdatareceiver.hpp"
+#include "qmlbgdataplugin.hpp"
+#include "bgdatareceiver.hpp"
 
 
-Q_LOGGING_CATEGORY(lcQmlSgvData, "qmlsgvdata")
+Q_LOGGING_CATEGORY(lcQmlBgData, "qmlbgdata")
 
 
-QmlSgvDataPlugin::QmlSgvDataPlugin(QObject *parent)
+QmlBgDataPlugin::QmlBgDataPlugin(QObject *parent)
 	: QQmlExtensionPlugin(parent)
 {
 	// Make sure our debug logs are disabled by default
 	// to avoid flooding the output. This can be overridden
 	// by setting the QT_LOGGING_RULES environment variable.
 	// Also see http://doc.qt.io/qt-5/qloggingcategory.html#logging-rules
-	QLoggingCategory::setFilterRules(QStringLiteral("qmlsgvdata*.debug=false"));
+	QLoggingCategory::setFilterRules(QStringLiteral("qmlbgdata*.debug=true"));
 }
 
 
-void QmlSgvDataPlugin::registerTypes(char const *uri)
+void QmlBgDataPlugin::registerTypes(char const *uri)
 {
-	qmlRegisterType<SGVDataReceiver>(uri, 1, 0, "SGVDataReceiver");
+	qmlRegisterType<BGDataReceiver>(uri, 1, 0, "BGDataReceiver");
 }
