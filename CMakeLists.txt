@@ -13,13 +13,16 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DQMLBGDATA_DEBUG_BUILD")
+
 include(FindPkgConfig)
 
-find_package(Qt5 COMPONENTS Core DBus Qml REQUIRED)
+find_package(Qt5 COMPONENTS Core DBus Qml Quick REQUIRED)
 
 set(qmlbgdata_SOURCES
 	src/bgdatareceiver.cpp
 	src/bgdatareceiver.hpp
+	src/timeseriesview.cpp
+	src/timeseriesview.hpp
 	src/qmlbgdataplugin.hpp
 	src/qmlbgdataplugin.cpp
 )
@@ -27,7 +30,7 @@ set(qmlbgdata_SOURCES
 qt5_add_dbus_adaptor(qmlbgdata_SOURCES src/extappmsgreceiveriface.xml src/bgdatareceiver.hpp BGDataReceiver)
 
 add_library(qmlbgdata SHARED ${qmlbgdata_SOURCES})
-target_link_libraries(qmlbgdata Qt5::Core Qt5::DBus Qt5::Qml)
+target_link_libraries(qmlbgdata Qt5::Core Qt5::DBus Qt5::Qml Qt5::Quick)
 target_compile_options(qmlbgdata PRIVATE -Wextra -Wall -pedantic)
 
 set(PLUGIN_PATH ${QT_DIR}/qml/QmlBgData)

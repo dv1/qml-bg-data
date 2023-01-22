@@ -7,6 +7,7 @@
 
 #include "qmlbgdataplugin.hpp"
 #include "bgdatareceiver.hpp"
+#include "timeseriesview.hpp"
 
 
 Q_LOGGING_CATEGORY(lcQmlBgData, "qmlbgdata")
@@ -32,4 +33,5 @@ QmlBgDataPlugin::QmlBgDataPlugin(QObject *parent)
 void QmlBgDataPlugin::registerTypes(char const *uri)
 {
 	qmlRegisterType<BGDataReceiver>(uri, 1, 0, "BGDataReceiver");
+	qmlRegisterType<TimeSeriesView>(uri, 1, 0, "TimeSeriesView");
 }
