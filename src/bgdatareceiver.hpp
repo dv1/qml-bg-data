@@ -80,22 +80,9 @@ public:
 	int m_percentage = 100;
 };
 
-struct Graph
-{
-	Q_GADGET
-
-	Q_PROPERTY(QVariantList bgValues MEMBER m_bgValues)
-	Q_PROPERTY(QVariantList bgTimestamps MEMBER m_bgTimestamps)
-
-public:
-	QVariantList m_bgValues;
-	QVariantList m_bgTimestamps;
-};
-
 class BGDataReceiver
 	: public QObject
 {
-public:
 	Q_OBJECT
 
 	Q_PROPERTY(QVariant unit READ unit NOTIFY unitChanged)
@@ -104,7 +91,7 @@ public:
 	Q_PROPERTY(QVariant carbsOnBoard READ carbsOnBoard NOTIFY carbsOnBoardChanged)
 	Q_PROPERTY(QVariant lastLoopRunTime READ lastLoopRunTime NOTIFY lastLoopRunTimeChanged)
 	Q_PROPERTY(QVariant basalRate READ basalRate NOTIFY basalRateChanged)
-	Q_PROPERTY(Graph const & graph READ graph NOTIFY graphChanged)
+	Q_PROPERTY(QVariantList const & bgTimeSeries READ bgTimeSeries NOTIFY bgTimeSeriesChanged)
 
 public:
 	explicit BGDataReceiver(QObject *parent = nullptr);
@@ -115,7 +102,7 @@ public:
 	QVariant carbsOnBoard() const;
 	QDateTime const & lastLoopRunTime() const;
 	QVariant basalRate() const;
-	Graph const & graph() const;
+	QVariantList const & bgTimeSeries() const;
 
 signals:
 	void updateStarted();
@@ -129,7 +116,7 @@ signals:
 	void carbsOnBoardChanged();
 	void lastLoopRunTimeChanged();
 	void basalRateChanged();
-	void graphChanged();
+	void bgTimeSeriesChanged();
 
 public slots:
 	// This slot is invoked by the DBus ExternalAppMessages adaptor
@@ -146,7 +133,7 @@ private:
 	std::optional<CarbsOnBoard> m_cob;
 	QDateTime m_lastLoopRunTime;
 	std::optional<BasalRate> m_basalRate;
-	Graph m_graph;
+	QVariantList m_bgTimeSeries;
 };
 
 #endif // BGDATARECEIVER_HPP

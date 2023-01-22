@@ -91,9 +91,9 @@ QVariant BGDataReceiver::basalRate() const
 }
 
 
-Graph const & BGDataReceiver::graph() const
+QVariantList const & BGDataReceiver::bgTimeSeries() const
 {
-	return m_graph;
+	return m_bgTimeSeries;
 }
 
 
@@ -157,7 +157,7 @@ void BGDataReceiver::resetQuantities()
 	m_cob = std::nullopt;
 	m_lastLoopRunTime = QDateTime();
 	m_basalRate = std::nullopt;
-	m_graph = Graph();
+	m_bgTimeSeries = QVariantList();
 }
 
 
@@ -168,178 +168,235 @@ void BGDataReceiver::update(QJsonObject const &json)
 	// In here, parse the JSON object to extract the updated values.
 	// Only emit signals if the values really did change.
 
-	readFromJSON<QString>(json, "unit", [this](QString unit) {
-		bool unitIsMGDL = (unit == "mgdl");
-		if (m_unitIsMGDL == unitIsMGDL)
-			return;
+	try
+	{
+		parse<QJsonObject>(json, true, "basalRate", [this](auto const &basalRateJson) {
+			bool changed = false;
 
-		m_unitIsMGDL = unitIsMGDL;
-		qCDebug(lcQmlBgData) << "Unit changed:" << unit;
-		emit unitChanged();
-	});
-
-	readFromJSON<QJsonObject>(json, "bgStatus", [this](QJsonObject bgStatusJson) {
-		bool changed = false;
-
-		// Initialize m_bgStatus if we haven't done so already.
-		if (!m_bgStatus.has_value())
-		{
-			changed = true;
-			m_bgStatus = BGStatus();
-		}
-
-		readFromJSON<float>(bgStatusJson, "bgValue", [this, &changed](float bgValue) {
-			changed = changed || (m_bgStatus->m_bgValue != bgValue);
-			m_bgStatus->m_bgValue = bgValue;
-		});
-
-		readFromJSON<bool>(bgStatusJson, "isValid", [this, &changed](bool isValid) {
-			changed = changed || (m_bgStatus->m_isValid != isValid);
-			m_bgStatus->m_isValid = isValid;
-		});
-
-		readFromJSON<QString>(bgStatusJson, "trendArrow", [this, &changed](QString trendArrowStr) {
-			TrendArrow trendArrow;
-			bool validValue = true;
-
-			if      (trendArrowStr == "none")          trendArrow = TrendArrow::NONE;
-			else if (trendArrowStr == "tripleUp")      trendArrow = TrendArrow::TRIPLE_UP;
-			else if (trendArrowStr == "doubleUp")      trendArrow = TrendArrow::DOUBLE_UP;
-			else if (trendArrowStr == "singleUp")      trendArrow = TrendArrow::SINGLE_UP;
-			else if (trendArrowStr == "fortyFiveUp")   trendArrow = TrendArrow::FORTY_FIVE_UP;
-			else if (trendArrowStr == "flat")          trendArrow = TrendArrow::FLAT;
-			else if (trendArrowStr == "fortyFiveDown") trendArrow = TrendArrow::FORTY_FIVE_DOWN;
-			else if (trendArrowStr == "singleDown")    trendArrow = TrendArrow::SINGLE_DOWN;
-			else if (trendArrowStr == "doubleDown")    trendArrow = TrendArrow::DOUBLE_DOWN;
-			else if (trendArrowStr == "tripleDown")    trendArrow = TrendArrow::TRIPLE_DOWN;
-			else validValue = false;
-
-			if (validValue)
+			// Create new BasalRate instance on demand.
+			if (!m_basalRate.has_value())
 			{
-				changed = changed || (m_bgStatus->m_trendArrow != trendArrow);
-				m_bgStatus->m_trendArrow = trendArrow;
+				changed = true;
+				m_basalRate = BasalRate();
 			}
-			else
-				qCWarning(lcQmlBgData) << "Skipping invalid trendArrow value" << trendArrowStr;
+
+			parse<float>(basalRateJson, true, "baseRate", [this, &changed](auto baseRate) {
+				changed = changed || (m_basalRate->m_baseRate != baseRate);
+				m_basalRate->m_baseRate = baseRate;
+			});
+
+			parse<int>(basalRateJson, true, "percentage", [this, &changed](auto percentage) {
+				changed = changed || (m_basalRate->m_percentage != percentage);
+				m_basalRate->m_percentage = percentage;
+			});
+
+			if (changed)
+			{
+				qCDebug(lcQmlBgData) << "Basal rate changed: baseRate" << m_basalRate->m_baseRate << "percentage" << m_basalRate->m_percentage;
+				emit basalRateChanged();
+			}
 		});
 
-		readFromJSON<float>(bgStatusJson, "delta", [this, &changed](float delta) {
-			changed = changed || (m_bgStatus->m_delta != delta); // TODO epsilon
-			m_bgStatus->m_delta = delta;
+		parse<QJsonObject>(json, false, "bgStatus", [this](auto const &bgStatusJson) {
+			bool changed = false;
+
+			// Create new BGStatus instance on demand.
+			if (!m_bgStatus.has_value())
+			{
+				changed = true;
+				m_bgStatus = BGStatus();
+			}
+
+			parse<float>(bgStatusJson, true, "bgValue", [this, &changed](auto bgValue) {
+				changed = changed || (m_bgStatus->m_bgValue != bgValue);
+				m_bgStatus->m_bgValue = bgValue;
+			});
+
+			parse<float>(bgStatusJson, true, "delta", [this, &changed](auto delta) {
+				changed = changed || (m_bgStatus->m_delta != delta); // TODO epsilon
+				m_bgStatus->m_delta = delta;
+			});
+
+			parse<bool>(bgStatusJson, true, "isValid", [this, &changed](auto isValid) {
+				changed = changed || (m_bgStatus->m_isValid != isValid);
+				m_bgStatus->m_isValid = isValid;
+			});
+
+			parse<qint64>(bgStatusJson, true, "timestamp", [this, &changed](auto timestampInt) {
+				auto timestamp = QDateTime::fromSecsSinceEpoch(timestampInt, Qt::UTC);
+				changed = changed || (m_bgStatus->m_timestamp != timestamp);
+				m_bgStatus->m_timestamp = timestamp;
+			});
+
+			parse<QString>(bgStatusJson, true, "trendArrow", [this, &changed](auto trendArrowStr) {
+				TrendArrow trendArrow;
+				bool validValue = true;
+
+				if      (trendArrowStr == "none")          trendArrow = TrendArrow::NONE;
+				else if (trendArrowStr == "tripleUp")      trendArrow = TrendArrow::TRIPLE_UP;
+				else if (trendArrowStr == "doubleUp")      trendArrow = TrendArrow::DOUBLE_UP;
+				else if (trendArrowStr == "singleUp")      trendArrow = TrendArrow::SINGLE_UP;
+				else if (trendArrowStr == "fortyFiveUp")   trendArrow = TrendArrow::FORTY_FIVE_UP;
+				else if (trendArrowStr == "flat")          trendArrow = TrendArrow::FLAT;
+				else if (trendArrowStr == "fortyFiveDown") trendArrow = TrendArrow::FORTY_FIVE_DOWN;
+				else if (trendArrowStr == "singleDown")    trendArrow = TrendArrow::SINGLE_DOWN;
+				else if (trendArrowStr == "doubleDown")    trendArrow = TrendArrow::DOUBLE_DOWN;
+				else if (trendArrowStr == "tripleDown")    trendArrow = TrendArrow::TRIPLE_DOWN;
+				else validValue = false;
+
+				if (validValue)
+				{
+					changed = changed || (m_bgStatus->m_trendArrow != trendArrow);
+					m_bgStatus->m_trendArrow = trendArrow;
+				}
+				else
+					qCWarning(lcQmlBgData) << "Skipping invalid trendArrow value" << trendArrowStr;
+			});
+
+			if (changed)
+			{
+				qCDebug(lcQmlBgData) << "BG status changed";
+				emit bgStatusChanged();
+			}
 		});
 
-		readFromJSON<qint64>(bgStatusJson, "timestamp", [this, &changed](qint64 timestampInt) {
-			auto timestamp = QDateTime::fromSecsSinceEpoch(timestampInt, Qt::UTC);
-			changed = changed || (m_bgStatus->m_timestamp != timestamp);
-			m_bgStatus->m_timestamp = timestamp;
+		parse<QJsonObject>(json, false, "bgTimeSeries", [this](auto const &bgTimeSeriesJson) {
+			bool valid = true;
+
+			auto valuesJson = bgTimeSeriesJson["values"];
+			if (!valuesJson.isArray())
+			{
+				qCWarning(lcQmlBgData) << "values field in bgTimeSeries JSON invalid or missing";
+				valid = false;
+			}
+
+			auto timestampsJson = bgTimeSeriesJson["timestamps"];
+			if (!timestampsJson.isArray())
+			{
+				qCWarning(lcQmlBgData) << "timestamps field in bgTimeSeries JSON invalid or missing";
+				valid = false;
+			}
+
+			QJsonArray values = valuesJson.toArray();
+			QJsonArray timestamps = timestampsJson.toArray();
+
+			if (values.count() != timestamps.count())
+			{
+				qCWarning(lcQmlBgData).nospace().noquote()
+				                       << "values and timestamps arrays have different number of items "
+				                       << "(" << values.count() << " vs. " << timestamps.count() << ")";
+				valid = false;
+			}
+
+			m_bgTimeSeries = QVariantList();
+
+			if (valid)
+			{
+				for (int i = 0; i < values.count(); ++i)
+				{
+					auto valueJson = values[i];
+					if (!valueJson.isDouble())
+					{
+						qCWarning(lcQmlBgData).nospace().noquote() << "BG value #" << i << " is not a number";
+						valid = false;
+						break;
+					}
+
+					auto timestampJson = timestamps[i];
+					if (!timestampJson.isDouble())
+					{
+						qCWarning(lcQmlBgData).nospace().noquote() << "BG timestamp #" << i << " is not a number";
+						valid = false;
+						break;
+					}
+
+					m_bgTimeSeries.append(QPointF(valueJson.toDouble() / 1000.0, timestampJson.toDouble() / 1000.0));
+				}
+			}
+
+			qCDebug(lcQmlBgData) << "BG time series changed";
+
+			emit bgTimeSeriesChanged();
 		});
 
-		if (changed)
-		{
-			qCDebug(lcQmlBgData) << "BG status changed";
-			emit bgStatusChanged();
-		}
-	});
+		parse<QJsonObject>(json, true, "iob", [this](auto const &iobJson) {
+			bool changed = false;
 
-	readFromJSON<QJsonObject>(json, "iob", [this](QJsonObject const &iobJson) {
-		bool changed = false;
-		if (!m_iob.has_value())
-		{
-			changed = true;
-			m_iob = InsulinOnBoard();
-		}
+			// Create new InsulinOnBoard instance on demand.
+			if (!m_iob.has_value())
+			{
+				changed = true;
+				m_iob = InsulinOnBoard();
+			}
 
-		readFromJSON<float>(iobJson, "basal", [this, &changed](float basal) {
-			changed = changed || (m_iob->m_basal != basal);
-			m_iob->m_basal = basal;
+			parse<float>(iobJson, true, "basal", [this, &changed](auto basal) {
+				changed = changed || (m_iob->m_basal != basal);
+				m_iob->m_basal = basal;
+			});
+
+			parse<float>(iobJson, true, "bolus", [this, &changed](auto bolus) {
+				changed = changed || (m_iob->m_bolus != bolus);
+				m_iob->m_bolus = bolus;
+			});
+
+			if (changed)
+			{
+				qCDebug(lcQmlBgData) << "IOB changed: basal" << m_iob->m_basal << "bolus" << m_iob->m_bolus;
+				emit insulinOnBoardChanged();
+			}
 		});
 
-		readFromJSON<float>(iobJson, "bolus", [this, &changed](float bolus) {
-			changed = changed || (m_iob->m_bolus != bolus);
-			m_iob->m_bolus = bolus;
+		parse<QJsonObject>(json, true, "cob", [this](QJsonObject const &cobJson) {
+			bool changed = false;
+
+			// Create new CarbsOnBoard instance on demand.
+			if (!m_iob.has_value())
+			{
+				changed = true;
+				m_cob = CarbsOnBoard();
+			}
+
+			parse<int>(cobJson, true, "current", [this, &changed](int current) {
+				changed = changed || (m_cob->m_current != current);
+				m_cob->m_current = current;
+			});
+
+			parse<int>(cobJson, true, "future", [this, &changed](int future) {
+				changed = changed || (m_cob->m_future != future);
+				m_cob->m_future = future;
+			});
+
+			if (changed)
+			{
+				qCDebug(lcQmlBgData) << "COB changed: current" << m_cob->m_current << "future" << m_cob->m_future;
+				emit carbsOnBoardChanged();
+			}
 		});
 
-		if (changed)
-		{
-			qCDebug(lcQmlBgData) << "IOB changed: basal" << m_iob->m_basal << "bolus" << m_iob->m_bolus;
-			emit insulinOnBoardChanged();
-		}
-	});
+		parse<qint64>(json, false, "lastLoopRunTime", [this](auto lastLoopRunTimeInt) {
+			auto lastLoopRunTime = QDateTime::fromSecsSinceEpoch(lastLoopRunTimeInt, Qt::UTC);
+			if (m_lastLoopRunTime == lastLoopRunTime)
+				return;
 
-	readFromJSON<QJsonObject>(json, "cob", [this](QJsonObject const &cobJson) {
-		bool changed = false;
-		if (!m_iob.has_value())
-		{
-			changed = true;
-			m_cob = CarbsOnBoard();
-		}
-
-		readFromJSON<int>(cobJson, "current", [this, &changed](int current) {
-			changed = changed || (m_cob->m_current != current);
-			m_cob->m_current = current;
+			m_lastLoopRunTime = lastLoopRunTime;
+			qCDebug(lcQmlBgData) << "lastLoopRunTime changed:" << lastLoopRunTime;
+			emit lastLoopRunTimeChanged();
 		});
 
-		readFromJSON<int>(cobJson, "future", [this, &changed](int future) {
-			changed = changed || (m_cob->m_future != future);
-			m_cob->m_future = future;
+		parse<QString>(json, true, "unit", [this](QString unit) {
+			bool unitIsMGDL = (unit == "mgdl");
+			if (m_unitIsMGDL == unitIsMGDL)
+				return;
+
+			m_unitIsMGDL = unitIsMGDL;
+			qCDebug(lcQmlBgData) << "Unit changed:" << unit;
+			emit unitChanged();
 		});
-
-		if (changed)
-		{
-			qCDebug(lcQmlBgData) << "COB changed: current" << m_cob->m_current << "future" << m_cob->m_future;
-			emit carbsOnBoardChanged();
-		}
-	});
-
-	readFromJSON<qint64>(json, "lastLoopRunTime", [this](qint64 lastLoopRunTimeInt) {
-		auto lastLoopRunTime = QDateTime::fromSecsSinceEpoch(lastLoopRunTimeInt, Qt::UTC);
-		if (m_lastLoopRunTime == lastLoopRunTime)
-			return;
-
-		m_lastLoopRunTime = lastLoopRunTime;
-		qCDebug(lcQmlBgData) << "lastLoopRunTime changed:" << lastLoopRunTime;
-		emit lastLoopRunTimeChanged();
-	});
-
-	readFromJSON<QJsonObject>(json, "basalRate", [this](QJsonObject const &basalRateJson) {
-		bool changed = false;
-		if (!m_basalRate.has_value())
-		{
-			changed = true;
-			m_basalRate = BasalRate();
-		}
-
-		readFromJSON<float>(basalRateJson, "baseRate", [this, &changed](float baseRate) {
-			changed = changed || (m_basalRate->m_baseRate != baseRate);
-			m_basalRate->m_baseRate = baseRate;
-		});
-
-		readFromJSON<int>(basalRateJson, "percentage", [this, &changed](int percentage) {
-			changed = changed || (m_basalRate->m_percentage != percentage);
-			m_basalRate->m_percentage = percentage;
-		});
-
-		if (changed)
-		{
-			qCDebug(lcQmlBgData) << "Basal rate changed: baseRate" << m_basalRate->m_baseRate << "percentage" << m_basalRate->m_percentage;
-			emit basalRateChanged();
-		}
-	});
-
-	readFromJSON<QJsonObject>(json, "graph", [this](QJsonObject const &graphJson) {
-		readFromJSON<QJsonArray>(graphJson, "bgValues", [this](QJsonArray const &bgValuesJson) {
-			QVariantList bgValues = bgValuesJson.toVariantList();
-			m_graph.m_bgValues = std::move(bgValues);
-		});
-
-		readFromJSON<QJsonArray>(graphJson, "bgTimestamps", [this](QJsonArray const &bgTimestampsJson) {
-			QVariantList bgTimestamps = bgTimestampsJson.toVariantList();
-			m_graph.m_bgTimestamps = std::move(bgTimestamps);
-		});
-
-		qCDebug(lcQmlBgData) << "Graph changed";
-		emit graphChanged();
-	});
+	}
+	catch (JSONError const &e)
+	{
+		qCWarning(lcQmlBgData) << "Error while parsing JSON: " << e.what();
+	}
 
 	emit updateEnded();
 }
