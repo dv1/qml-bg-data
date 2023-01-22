@@ -12,6 +12,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DQMLBGDATA_DEBUG_BUILD")
 include(FindPkgConfig)
 
 find_package(Qt5 COMPONENTS Core DBus Qml REQUIRED)
@@ -29,7 +30,7 @@ add_library(qmlbgdata SHARED ${qmlbgdata_SOURCES})
 target_link_libraries(qmlbgdata Qt5::Core Qt5::DBus Qt5::Qml)
 target_compile_options(qmlbgdata PRIVATE -Wextra -Wall -pedantic)
 
-set(PLUGIN_PATH ${QT_DIR}/../../../qml/${PROJECT_NAME})
+set(PLUGIN_PATH ${QT_DIR}/qml/QmlBgData)
 
 install(TARGETS ${PROJECT_NAME} DESTINATION ${PLUGIN_PATH})
 install(FILES resources/qml/qmldir DESTINATION ${PLUGIN_PATH})

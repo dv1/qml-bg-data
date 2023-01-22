@@ -15,11 +15,17 @@ Q_LOGGING_CATEGORY(lcQmlBgData, "qmlbgdata")
 QmlBgDataPlugin::QmlBgDataPlugin(QObject *parent)
 	: QQmlExtensionPlugin(parent)
 {
-	// Make sure our debug logs are disabled by default
-	// to avoid flooding the output. This can be overridden
+	// In release builds, make sure our debug logs are disabled by
+	// default to avoid flooding the output. This can be overridden
 	// by setting the QT_LOGGING_RULES environment variable.
 	// Also see http://doc.qt.io/qt-5/qloggingcategory.html#logging-rules
-	QLoggingCategory::setFilterRules(QStringLiteral("qmlbgdata*.debug=true"));
+	QLoggingCategory::setFilterRules(
+#ifdef QMLBGDATA_DEBUG_BUILD
+		QStringLiteral("qmlbgdata*.debug=true")
+#else
+		QStringLiteral("qmlbgdata*.debug=false")
+#endif
+	);
 }
 
 
