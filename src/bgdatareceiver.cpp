@@ -294,14 +294,6 @@ void BGDataReceiver::update(QJsonObject const &json)
 			{
 				for (int i = 0; i < values.count(); ++i)
 				{
-					auto valueJson = values[i];
-					if (!valueJson.isDouble())
-					{
-						qCWarning(lcQmlBgData).nospace().noquote() << "BG value #" << i << " is not a number";
-						valid = false;
-						break;
-					}
-
 					auto timestampJson = timestamps[i];
 					if (!timestampJson.isDouble())
 					{
@@ -310,7 +302,15 @@ void BGDataReceiver::update(QJsonObject const &json)
 						break;
 					}
 
-					m_bgTimeSeries.append(QPointF(valueJson.toDouble() / 1000.0, timestampJson.toDouble() / 1000.0));
+					auto valueJson = values[i];
+					if (!valueJson.isDouble())
+					{
+						qCWarning(lcQmlBgData).nospace().noquote() << "BG value #" << i << " is not a number";
+						valid = false;
+						break;
+					}
+
+					m_bgTimeSeries.append(QPointF(timestampJson.toDouble() / 1000.0, valueJson.toDouble() / 1000.0));
 				}
 			}
 
