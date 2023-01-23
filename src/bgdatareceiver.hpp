@@ -28,14 +28,14 @@ struct BGStatus
 
 	Q_ENUM(TrendArrow)
 
-	Q_PROPERTY(int bgValue MEMBER m_bgValue)
+	Q_PROPERTY(float bgValue MEMBER m_bgValue)
 	Q_PROPERTY(float delta MEMBER m_delta)
 	Q_PROPERTY(bool isValid MEMBER m_isValid)
 	Q_PROPERTY(QDateTime timestamp MEMBER m_timestamp)
 	Q_PROPERTY(TrendArrow trendArrow MEMBER m_trendArrow)
 
 public:
-	int m_bgValue = 0;
+	float m_bgValue = 0;
 	float m_delta = 0;
 	bool m_isValid = false;
 	QDateTime m_timestamp;
