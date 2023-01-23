@@ -15,6 +15,7 @@ class TimeSeriesView
 	Q_OBJECT
 
 	Q_PROPERTY(QColor color READ color WRITE setColor)
+	Q_PROPERTY(float lineWidth READ lineWidth WRITE setLineWidth)
 	Q_PROPERTY(QVariantList timeSeries READ timeSeries WRITE setTimeSeries)
 
 public:
@@ -23,6 +24,9 @@ public:
 
 	QColor const & color() const;
 	void setColor(QColor newColor);
+
+	float lineWidth() const;
+	void setLineWidth(float newLineWidth);
 
 	QVariantList const & timeSeries() const;
 	void setTimeSeries(QVariantList newTimeSeries);
@@ -38,6 +42,7 @@ private:
 	std::mutex m_nodeStateMutex;
 
 	QColor m_color;
+	float m_lineWidth;
 	bool m_mustUpdateMaterial;
 
 	QVariantList m_timeSeries;

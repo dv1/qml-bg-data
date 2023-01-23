@@ -148,6 +148,7 @@ void simplifyTimeSeries(QVariantList const &sourceSeries, std::vector<QPointF> &
 TimeSeriesView::TimeSeriesView(QQuickItem *parent)
 	: QQuickItem(parent)
 	, m_color(Qt::black)
+	, m_lineWidth(1.0f)
 	, m_mustUpdateMaterial(false)
 	, m_mustRecreateNodeGeometry(false)
 {
@@ -203,6 +204,27 @@ void TimeSeriesView::setColor(QColor newColor)
 }
 
 
+float TimeSeriesView::lineWidth() const
+{
+	return m_lineWidth;
+}
+
+
+void TimeSeriesView::setLineWidth(float newLineWidth)
+{
+	qCDebug(lcQmlBgData).nospace().noquote()
+		<< "Using new line width " << newLineWidth;
+
+	{
+		std::lock_guard<std::mutex> lock(m_nodeStateMutex);
+		m_lineWidth = newLineWidth;
+		m_mustUpdateMaterial = true;
+	}
+
+	update();
+}
+
+
 QVariantList const & TimeSeriesView::timeSeries() const
 {
 	return m_timeSeries;
@@ -245,6 +267,7 @@ QSGNode* TimeSeriesView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
 
 		QSGGeometry *geometry = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 0);
 		geometry->setDrawingMode(QSGGeometry::DrawLineStrip);
+		geometry->setLineWidth(m_lineWidth);
 		node->setGeometry(geometry);
 	}
 	else
