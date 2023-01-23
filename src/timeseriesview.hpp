@@ -14,11 +14,15 @@ class TimeSeriesView
 {
 	Q_OBJECT
 
+	Q_PROPERTY(QColor color READ color WRITE setColor)
 	Q_PROPERTY(QVariantList timeSeries READ timeSeries WRITE setTimeSeries)
 
 public:
 	explicit TimeSeriesView(QQuickItem *parent = nullptr);
 	~TimeSeriesView() override;
+
+	QColor const & color() const;
+	void setColor(QColor newColor);
 
 	QVariantList const & timeSeries() const;
 	void setTimeSeries(QVariantList newTimeSeries);
@@ -27,7 +31,15 @@ protected:
 	QSGNode* updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *updatePaintNodeData);
 
 private:
-	std::mutex m_dataMutex;
+	// This mutex protects states that are relevant to the QSG node.
+	// In particular, it synchronizes write access by the setters
+	// above and the code in updatePaintNode(), because the latter
+	// runs in a different thread than the getters and setters abvoe.
+	std::mutex m_nodeStateMutex;
+
+	QColor m_color;
+	bool m_mustUpdateMaterial;
+
 	QVariantList m_timeSeries;
 	std::vector<QPointF> m_simplifiedTimeSeries;
 	bool m_mustRecreateNodeGeometry;

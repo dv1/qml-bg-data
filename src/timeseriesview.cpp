@@ -147,26 +147,59 @@ void simplifyTimeSeries(QVariantList const &sourceSeries, std::vector<QPointF> &
 
 TimeSeriesView::TimeSeriesView(QQuickItem *parent)
 	: QQuickItem(parent)
+	, m_color(Qt::black)
+	, m_mustUpdateMaterial(false)
 	, m_mustRecreateNodeGeometry(false)
 {
 	setFlag(QQuickItem::ItemHasContents, true);
 
 	connect(this, &QQuickItem::widthChanged, [this](){
 		qCDebug(lcQmlBgData).nospace().noquote() << "Width changed to " << width() << "; need to recreate QSG node geometry";
-		std::lock_guard<std::mutex> lock(m_dataMutex);
-		m_mustRecreateNodeGeometry = true;
+
+		{
+			std::lock_guard<std::mutex> lock(m_nodeStateMutex);
+			m_mustRecreateNodeGeometry = true;
+		}
+
+		update();
 	});
 
 	connect(this, &QQuickItem::heightChanged, [this](){
 		qCDebug(lcQmlBgData).nospace().noquote() << "Height changed to " << height() << "; need to recreate QSG node geometry";
-		std::lock_guard<std::mutex> lock(m_dataMutex);
-		m_mustRecreateNodeGeometry = true;
+
+		{
+			std::lock_guard<std::mutex> lock(m_nodeStateMutex);
+			m_mustRecreateNodeGeometry = true;
+		}
+
+		update();
 	});
 }
 
 
 TimeSeriesView::~TimeSeriesView()
 {
+}
+
+
+QColor const & TimeSeriesView::color() const
+{
+	return m_color;
+}
+
+
+void TimeSeriesView::setColor(QColor newColor)
+{
+	qCDebug(lcQmlBgData).nospace().noquote()
+		<< "Using new color " << newColor;
+
+	{
+		std::lock_guard<std::mutex> lock(m_nodeStateMutex);
+		m_color = std::move(newColor);
+		m_mustUpdateMaterial = true;
+	}
+
+	update();
 }
 
 
@@ -182,15 +215,19 @@ void TimeSeriesView::setTimeSeries(QVariantList newTimeSeries)
 		<< "Got new time series with " << newTimeSeries.size()
 		<< " item(s); will recreate QSG node geometry";
 
-	std::lock_guard<std::mutex> lock(m_dataMutex);
-	m_timeSeries = std::move(newTimeSeries);
-	m_mustRecreateNodeGeometry = true;
+	{
+		std::lock_guard<std::mutex> lock(m_nodeStateMutex);
+		m_timeSeries = std::move(newTimeSeries);
+		m_mustRecreateNodeGeometry = true;
+	}
+
+	update();
 }
 
 
 QSGNode* TimeSeriesView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
-	std::lock_guard<std::mutex> lock(m_dataMutex);
+	std::lock_guard<std::mutex> lock(m_nodeStateMutex);
 
 	QSGGeometryNode *node;
 
@@ -203,8 +240,8 @@ QSGNode* TimeSeriesView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
 		node->setFlag(QSGNode::OwnsMaterial, true);
 
 		QSGFlatColorMaterial *material = new QSGFlatColorMaterial;
-		material->setColor(Qt::red);
 		node->setMaterial(material);
+		m_mustUpdateMaterial = true;
 
 		QSGGeometry *geometry = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 0);
 		geometry->setDrawingMode(QSGGeometry::DrawLineStrip);
@@ -213,6 +250,12 @@ QSGNode* TimeSeriesView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
 	else
 	{
 		node = static_cast<QSGGeometryNode *>(oldNode);
+	}
+
+	if (m_mustUpdateMaterial)
+	{
+		static_cast<QSGFlatColorMaterial *>(node->material())->setColor(m_color);
+		m_mustUpdateMaterial = false;
 	}
 
 	if (m_timeSeries.empty())
