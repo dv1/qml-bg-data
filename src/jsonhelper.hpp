@@ -1,16 +1,11 @@
 #ifndef JSONHELPER_HPP
 #define JSONHELPER_HPP
 
-#include <QDebug>
-#include <QLoggingCategory>
 #include <QString>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <stdexcept>
 #include <cmath>
-
-
-Q_DECLARE_LOGGING_CATEGORY(lcQmlBgData)
 
 
 namespace detail
