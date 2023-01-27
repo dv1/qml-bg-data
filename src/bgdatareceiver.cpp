@@ -188,26 +188,30 @@ void BGDataReceiver::generateTestQuantities()
 
 	clearAllQuantities();
 
+	float delta = deltaDistribution(randomNumberGenerator);
+
 	BGStatus bgStatus;
 	bgStatus.m_bgValue = bgValueDistribution(randomNumberGenerator);
-	bgStatus.m_delta = deltaDistribution(randomNumberGenerator);
+	bgStatus.m_delta = std::isnan(delta) ? QVariant() : QVariant::fromValue(delta);
 	bgStatus.m_isValid = isValidBgDistribution(randomNumberGenerator);
 	bgStatus.m_timestamp = QDateTime::currentDateTime();
-	if (bgStatus.m_delta < -25)
+	if (std::isnan(delta))
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::NONE;
+	else if (delta < -25)
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::TRIPLE_DOWN;
-	else if (bgStatus.m_delta < -18)
+	else if (delta < -18)
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::DOUBLE_DOWN;
-	else if (bgStatus.m_delta < -10)
+	else if (delta < -10)
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::SINGLE_DOWN;
-	else if (bgStatus.m_delta < -5)
+	else if (delta < -5)
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::FORTY_FIVE_DOWN;
-	else if (bgStatus.m_delta > +25)
+	else if (delta > +25)
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::TRIPLE_UP;
-	else if (bgStatus.m_delta > +18)
+	else if (delta > +18)
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::DOUBLE_UP;
-	else if (bgStatus.m_delta > +10)
+	else if (delta > +10)
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::SINGLE_UP;
-	else if (bgStatus.m_delta > +5)
+	else if (delta > +5)
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::FORTY_FIVE_UP;
 	else
 		bgStatus.m_trendArrow = BGStatus::TrendArrow::FLAT;
@@ -423,9 +427,18 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 			qCDebug(lcQmlBgData) << "bgValue:" << bgValue;
 
 			float delta = floatFrom(payload, offset);
-			changed = changed || (std::abs(m_bgStatus->m_delta - delta) >= bgValueEpsilon);
-			m_bgStatus->m_delta = delta;
-			qCDebug(lcQmlBgData) << "delta:" << delta;
+			if (std::isnan(delta))
+			{
+				changed = changed || m_bgStatus->m_delta.isValid();
+				m_bgStatus->m_delta = QVariant();
+				qCDebug(lcQmlBgData) << "Got NaN as delta; no delta value available";
+			}
+			else
+			{
+				changed = changed || (std::abs(m_bgStatus->m_delta.toFloat() - delta) >= bgValueEpsilon);
+				m_bgStatus->m_delta = delta;
+				qCDebug(lcQmlBgData) << "delta:" << delta;
+			}
 
 			QDateTime timestamp = QDateTime::fromSecsSinceEpoch(int64From(payload, offset), Qt::UTC);
 			changed = changed || (m_bgStatus->m_timestamp != timestamp);

@@ -31,14 +31,14 @@ public:
 
 private:
 	Q_PROPERTY(float bgValue MEMBER m_bgValue)
-	Q_PROPERTY(float delta MEMBER m_delta)
+	Q_PROPERTY(QVariant delta MEMBER m_delta)
 	Q_PROPERTY(bool isValid MEMBER m_isValid)
 	Q_PROPERTY(QDateTime timestamp MEMBER m_timestamp)
 	Q_PROPERTY(TrendArrow trendArrow MEMBER m_trendArrow)
 
 public:
 	float m_bgValue = 0;
-	float m_delta = 0;
+	QVariant m_delta;
 	bool m_isValid = false;
 	QDateTime m_timestamp;
 	TrendArrow m_trendArrow = TrendArrow::NONE;
