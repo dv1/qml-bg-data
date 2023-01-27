@@ -7,7 +7,7 @@
 #include <QQuickWindow>
 #include <QSGGeometry>
 #include <QSGGeometryNode>
-#include "timeseriesview.hpp"
+#include "bgtimeseriesview.hpp"
 
 
 Q_DECLARE_LOGGING_CATEGORY(lcQmlBgData)
@@ -145,7 +145,7 @@ void simplifyTimeSeries(QVariantList const &sourceSeries, std::vector<QPointF> &
 } // unnamed namespace end
 
 
-TimeSeriesView::TimeSeriesView(QQuickItem *parent)
+BGTimeSeriesView::BGTimeSeriesView(QQuickItem *parent)
 	: QQuickItem(parent)
 	, m_color(Qt::black)
 	, m_lineWidth(1.0f)
@@ -178,18 +178,18 @@ TimeSeriesView::TimeSeriesView(QQuickItem *parent)
 }
 
 
-TimeSeriesView::~TimeSeriesView()
+BGTimeSeriesView::~BGTimeSeriesView()
 {
 }
 
 
-QColor const & TimeSeriesView::color() const
+QColor const & BGTimeSeriesView::color() const
 {
 	return m_color;
 }
 
 
-void TimeSeriesView::setColor(QColor newColor)
+void BGTimeSeriesView::setColor(QColor newColor)
 {
 	qCDebug(lcQmlBgData).nospace().noquote()
 		<< "Using new color " << newColor;
@@ -204,13 +204,13 @@ void TimeSeriesView::setColor(QColor newColor)
 }
 
 
-float TimeSeriesView::lineWidth() const
+float BGTimeSeriesView::lineWidth() const
 {
 	return m_lineWidth;
 }
 
 
-void TimeSeriesView::setLineWidth(float newLineWidth)
+void BGTimeSeriesView::setLineWidth(float newLineWidth)
 {
 	qCDebug(lcQmlBgData).nospace().noquote()
 		<< "Using new line width " << newLineWidth;
@@ -225,21 +225,21 @@ void TimeSeriesView::setLineWidth(float newLineWidth)
 }
 
 
-QVariantList const & TimeSeriesView::timeSeries() const
+QVariantList const & BGTimeSeriesView::bgTimeSeries() const
 {
-	return m_timeSeries;
+	return m_bgTimeSeries;
 }
 
 
-void TimeSeriesView::setTimeSeries(QVariantList newTimeSeries)
+void BGTimeSeriesView::setBGTimeSeries(QVariantList newBGTimeSeries)
 {
 	qCDebug(lcQmlBgData).nospace().noquote()
-		<< "Got new time series with " << newTimeSeries.size()
+		<< "Got new BG time series with " << newBGTimeSeries.size()
 		<< " item(s); will recreate QSG node geometry";
 
 	{
 		std::lock_guard<std::mutex> lock(m_nodeStateMutex);
-		m_timeSeries = std::move(newTimeSeries);
+		m_bgTimeSeries = std::move(newBGTimeSeries);
 		m_mustRecreateNodeGeometry = true;
 	}
 
@@ -247,7 +247,7 @@ void TimeSeriesView::setTimeSeries(QVariantList newTimeSeries)
 }
 
 
-QSGNode* TimeSeriesView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
+QSGNode* BGTimeSeriesView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
 	std::lock_guard<std::mutex> lock(m_nodeStateMutex);
 
@@ -281,11 +281,11 @@ QSGNode* TimeSeriesView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
 		m_mustUpdateMaterial = false;
 	}
 
-	if (m_timeSeries.empty())
+	if (m_bgTimeSeries.empty())
 	{
 		qCDebug(lcQmlBgData) << "Clearing QSG time series node since the time series is empty";
 		node->geometry()->allocate(0);
-		m_simplifiedTimeSeries.clear();
+		m_simplifiedBGTimeSeries.clear();
 		m_mustRecreateNodeGeometry = false;
 	}
 	else if (m_mustRecreateNodeGeometry)
@@ -306,21 +306,21 @@ QSGNode* TimeSeriesView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *
 		{
 			qCDebug(lcQmlBgData).nospace().noquote() << "Recreating QSG node geometry";
 
-			simplifyTimeSeries(m_timeSeries, m_simplifiedTimeSeries, 3, currentWidth);
+			simplifyTimeSeries(m_bgTimeSeries, m_simplifiedBGTimeSeries, 3, currentWidth);
 			qCDebug(lcQmlBgData).nospace().noquote()
-				<< "Simplified original time series with " << m_timeSeries.size() << " item(s)"
-				<< " to a time series with " << m_simplifiedTimeSeries.size() << " item(s)";
+				<< "Simplified original BG time series with " << m_bgTimeSeries.size() << " item(s)"
+				<< " to a BG time series with " << m_simplifiedBGTimeSeries.size() << " item(s)";
 
 			QSGGeometry *geometry = node->geometry();
 
-			if (int(m_simplifiedTimeSeries.size()) != geometry->vertexCount())
-				geometry->allocate(m_simplifiedTimeSeries.size());
+			if (int(m_simplifiedBGTimeSeries.size()) != geometry->vertexCount())
+				geometry->allocate(m_simplifiedBGTimeSeries.size());
 
 			QSGGeometry::Point2D *vertices = geometry->vertexDataAsPoint2D();
 
-			for (std::size_t i = 0; i < m_simplifiedTimeSeries.size(); ++i)
+			for (std::size_t i = 0; i < m_simplifiedBGTimeSeries.size(); ++i)
 			{
-				QPointF const &timeSeriesPoint = m_simplifiedTimeSeries[i];
+				QPointF const &timeSeriesPoint = m_simplifiedBGTimeSeries[i];
 				float x = timeSeriesPoint.x() * currentWidth;
 				float y = (1.0 - timeSeriesPoint.y()) * currentHeight;
 

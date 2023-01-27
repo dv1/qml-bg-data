@@ -1,5 +1,5 @@
-#ifndef TIMESERIESVIEW_HPP
-#define TIMESERIESVIEW_HPP
+#ifndef BGTIMESERIESVIEW_HPP
+#define BGTIMESERIESVIEW_HPP
 
 #include <mutex>
 #include <QQuickItem>
@@ -9,18 +9,18 @@
 class QSGTexture;
 
 
-class TimeSeriesView
+class BGTimeSeriesView
 	: public QQuickItem
 {
 	Q_OBJECT
 
 	Q_PROPERTY(QColor color READ color WRITE setColor)
 	Q_PROPERTY(float lineWidth READ lineWidth WRITE setLineWidth)
-	Q_PROPERTY(QVariantList timeSeries READ timeSeries WRITE setTimeSeries)
+	Q_PROPERTY(QVariantList bgTimeSeries READ bgTimeSeries WRITE setBGTimeSeries)
 
 public:
-	explicit TimeSeriesView(QQuickItem *parent = nullptr);
-	~TimeSeriesView() override;
+	explicit BGTimeSeriesView(QQuickItem *parent = nullptr);
+	~BGTimeSeriesView() override;
 
 	QColor const & color() const;
 	void setColor(QColor newColor);
@@ -28,8 +28,8 @@ public:
 	float lineWidth() const;
 	void setLineWidth(float newLineWidth);
 
-	QVariantList const & timeSeries() const;
-	void setTimeSeries(QVariantList newTimeSeries);
+	QVariantList const & bgTimeSeries() const;
+	void setBGTimeSeries(QVariantList newBGTimeSeries);
 
 protected:
 	QSGNode* updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *updatePaintNodeData);
@@ -45,10 +45,10 @@ private:
 	float m_lineWidth;
 	bool m_mustUpdateMaterial;
 
-	QVariantList m_timeSeries;
-	std::vector<QPointF> m_simplifiedTimeSeries;
+	QVariantList m_bgTimeSeries;
+	std::vector<QPointF> m_simplifiedBGTimeSeries;
 	bool m_mustRecreateNodeGeometry;
 };
 
 
-#endif // TIMESERIESVIEW_HPP
+#endif // BGTIMESERIESVIEW_HPP

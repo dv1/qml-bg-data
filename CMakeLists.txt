@@ -29,8 +29,8 @@ find_package(Qt5 COMPONENTS Core DBus Qml Quick REQUIRED)
 set(qmlbgdata_SOURCES
 	src/bgdatareceiver.cpp
 	src/bgdatareceiver.hpp
-	src/timeseriesview.cpp
-	src/timeseriesview.hpp
+	src/bgtimeseriesview.cpp
+	src/bgtimeseriesview.hpp
 	src/qmlbgdataplugin.hpp
 	src/qmlbgdataplugin.cpp
 )
