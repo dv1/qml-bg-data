@@ -362,7 +362,13 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 			return;
 		}
 
-		m_unit = (flags & FLAG_UNIT_IS_MG_DL) ? Unit::MG_DL : Unit::MMOL_L;
+		// Unit
+		auto newUnit = (flags & FLAG_UNIT_IS_MG_DL) ? Unit::MG_DL : Unit::MMOL_L;
+		if (!m_unit.has_value() || (m_unit != newUnit))
+		{
+			m_unit = newUnit;
+			emit unitChanged();
+		}
 
 		// Basal rate
 		{
