@@ -257,6 +257,7 @@ void BGDataReceiver::generateTestQuantities()
 	emit insulinOnBoardChanged();
 	emit carbsOnBoardChanged();
 	emit lastLoopRunTimestampChanged();
+	emit basalRateChanged();
 
 	emit newDataReceived();
 }
