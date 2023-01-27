@@ -34,4 +34,5 @@ void QmlBgDataPlugin::registerTypes(char const *uri)
 {
 	qmlRegisterType<BGDataReceiver>(uri, 1, 0, "BGDataReceiver");
 	qmlRegisterType<TimeSeriesView>(uri, 1, 0, "TimeSeriesView");
+	qmlRegisterUncreatableType<BGStatus>(uri, 1, 0, "BGStatus", "BGStatus cannot be instantiated in QML");
 }

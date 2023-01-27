@@ -14,7 +14,15 @@ set(CMAKE_AUTORCC ON)
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DQMLBGDATA_DEBUG_BUILD")
 
+include(CheckTypeSize)
 include(FindPkgConfig)
+
+# We need floats to be 32-bit for conversions from 4-byte tuples to float
+# (See bgdatareceiver.cpp)
+check_type_size("float" VAR_FLOAT_SIZE LANGUAGE "CXX")
+if (NOT VAR_FLOAT_SIZE EQUAL "4")
+	message(FATAL_ERROR "size of float type must be 4 ; actual size: ${VAR_FLOAT_SIZE}")
+endif()
 
 find_package(Qt5 COMPONENTS Core DBus Qml Quick REQUIRED)
 

@@ -8,26 +8,28 @@
 #include <QDateTime>
 #include <QVariant>
 
-enum class TrendArrow
-{
-	NONE,
-	TRIPLE_UP,
-	DOUBLE_UP,
-	SINGLE_UP,
-	FORTY_FIVE_UP,
-	FLAT,
-	FORTY_FIVE_DOWN,
-	SINGLE_DOWN,
-	DOUBLE_DOWN,
-	TRIPLE_DOWN
-};
-
 struct BGStatus
 {
 	Q_GADGET
 
+public:
+	enum class TrendArrow
+	{
+		NONE,
+		TRIPLE_UP,
+		DOUBLE_UP,
+		SINGLE_UP,
+		FORTY_FIVE_UP,
+		FLAT,
+		FORTY_FIVE_DOWN,
+		SINGLE_DOWN,
+		DOUBLE_DOWN,
+		TRIPLE_DOWN
+	};
+
 	Q_ENUM(TrendArrow)
 
+private:
 	Q_PROPERTY(float bgValue MEMBER m_bgValue)
 	Q_PROPERTY(float delta MEMBER m_delta)
 	Q_PROPERTY(bool isValid MEMBER m_isValid)
@@ -72,12 +74,12 @@ struct BasalRate
 
 	Q_PROPERTY(float baseRate MEMBER m_baseRate)
 	Q_PROPERTY(float currentRate MEMBER m_currentRate)
-	Q_PROPERTY(int percentage MEMBER m_percentage)
+	Q_PROPERTY(int tbrPercentage MEMBER m_tbrPercentage)
 
 public:
 	float m_baseRate = 0.0f;
 	float m_currentRate = 0.0f;
-	int m_percentage = 100;
+	int m_tbrPercentage = 100;
 };
 
 class BGDataReceiver
@@ -85,13 +87,24 @@ class BGDataReceiver
 {
 	Q_OBJECT
 
+public:
+	enum class Unit
+	{
+		MG_DL,
+		MMOL_L
+	};
+	Q_ENUM(Unit)
+
+private:
 	Q_PROPERTY(QVariant unit READ unit NOTIFY unitChanged)
 	Q_PROPERTY(QVariant bgStatus READ bgStatus NOTIFY bgStatusChanged)
 	Q_PROPERTY(QVariant insulinOnBoard READ insulinOnBoard NOTIFY insulinOnBoardChanged)
 	Q_PROPERTY(QVariant carbsOnBoard READ carbsOnBoard NOTIFY carbsOnBoardChanged)
-	Q_PROPERTY(QVariant lastLoopRunTime READ lastLoopRunTime NOTIFY lastLoopRunTimeChanged)
+	Q_PROPERTY(QVariant lastLoopRunTimestamp READ lastLoopRunTimestamp NOTIFY lastLoopRunTimestampChanged)
 	Q_PROPERTY(QVariant basalRate READ basalRate NOTIFY basalRateChanged)
-	Q_PROPERTY(QVariantList const & bgTimeSeries READ bgTimeSeries NOTIFY bgTimeSeriesChanged)
+	Q_PROPERTY(QVariantList const & bgTimeSeries READ bgTimeSeries)
+	Q_PROPERTY(QVariantList const & basalTimeSeries READ basalTimeSeries)
+	Q_PROPERTY(QVariantList const & baseBasalTimeSeries READ baseBasalTimeSeries)
 
 public:
 	explicit BGDataReceiver(QObject *parent = nullptr);
@@ -100,40 +113,41 @@ public:
 	QVariant bgStatus() const;
 	QVariant insulinOnBoard() const;
 	QVariant carbsOnBoard() const;
-	QDateTime const & lastLoopRunTime() const;
+	QDateTime const & lastLoopRunTimestamp() const;
 	QVariant basalRate() const;
 	QVariantList const & bgTimeSeries() const;
+	QVariantList const & basalTimeSeries() const;
+	QVariantList const & baseBasalTimeSeries() const;
+
+	Q_INVOKABLE void generateTestQuantities();
 
 signals:
-	void updateStarted();
-	void updateEnded();
-
-	void allQuantitiesCleared();
+	void quantitiesChanged();
 
 	void unitChanged();
 	void bgStatusChanged();
 	void insulinOnBoardChanged();
 	void carbsOnBoardChanged();
-	void lastLoopRunTimeChanged();
+	void lastLoopRunTimestampChanged();
 	void basalRateChanged();
-	void bgTimeSeriesChanged();
 
 public slots:
 	// This slot is invoked by the DBus ExternalAppMessages adaptor
 	// that is generated out of externalappmessages.xml.
-	void pushMessage(QString sender, QString ID, QString body);
+	void pushMessage(QString sender, QByteArray payload);
 
 private:
-	void resetQuantities();
-	void update(QJsonObject const &json);
+	void clearAllQuantities();
 
-	std::optional<bool> m_unitIsMGDL;
+	std::optional<Unit> m_unit;
 	std::optional<BGStatus> m_bgStatus;
 	std::optional<InsulinOnBoard> m_iob;
 	std::optional<CarbsOnBoard> m_cob;
-	QDateTime m_lastLoopRunTime;
+	QDateTime m_lastLoopRunTimestamp;
 	std::optional<BasalRate> m_basalRate;
 	QVariantList m_bgTimeSeries;
+	QVariantList m_basalTimeSeries;
+	QVariantList m_baseBasalTimeSeries;
 };
 
 #endif // BGDATARECEIVER_HPP

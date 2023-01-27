@@ -3,8 +3,7 @@
   <interface name="org.asteroidos.externalappmessages.interfaces.Receiver">
     <method name="pushMessage">
       <arg name="source" type="s" direction="in"/>
-      <arg name="ID" type="s" direction="in"/>
-      <arg name="body" type="s" direction="in"/>
+      <arg name="payload" type="ay" direction="in"/>
     </method>
   </interface>
 </node>

@@ -1,13 +1,19 @@
 #include <QDebug>
 #include <QDBusConnection>
 #include <QLoggingCategory>
+#include <cassert>
+#include <cmath>
+#include <random>
 
 #include "bgdatareceiver.hpp"
-#include "jsonhelper.hpp"
 #include "extappmsgreceiverifaceadaptor.h"
 
 
 Q_DECLARE_LOGGING_CATEGORY(lcQmlBgData)
+
+
+// In here, we parse incoming BG datasets. The format specification
+// for that data can be found in the docs/bg-data-binary-format-spec.txt file.
 
 
 namespace {
@@ -15,16 +21,69 @@ namespace {
 QString const DBUS_SERVICE_NAME = "org.asteroidos.externalappmessages.BGDataReceiver";
 QString const DBUS_OBJECT_PATH = "/org/asteroidos/externalappmessages/BGDataReceiver";
 
-enum class MessageID
-{
-	NEW_BG_DATA,
-	BG_DATA_UPDATE
-};
+unsigned int const FLAG_UNIT_IS_MG_DL                   = (1u << 0);
+unsigned int const FLAG_BG_VALUE_IS_VALID               = (1u << 1);
+unsigned int const FLAG_BG_STATUS_PRESENT               = (1u << 2);
+unsigned int const FLAG_LAST_LOOP_RUN_TIMESTAMP_PRESENT = (1u << 3);
+unsigned int const FLAG_MUST_CLEAR_ALL_DATA             = (1u << 4);
 
 template<typename T>
 QVariant toQVariant(std::optional<T> const &optValue)
 {
 	return optValue.has_value() ? QVariant::fromValue(*optValue) : QVariant();
+}
+
+// NOTE: These bytes -> numeric converters assume
+// that the values are stored in little-endian order.
+
+float floatFrom(QByteArray const &bytes, int &offset)
+{
+	if (int(offset + sizeof(float)) > bytes.size())
+		throw std::out_of_range(QString("attempted to read float at offset %1").arg(offset).toStdString());
+
+	// TODO: Endianness
+	float f;
+	memcpy(&f, bytes.data() + offset, sizeof(float));
+	offset += sizeof(float);
+	return f;
+}
+
+qint8 int8From(QByteArray const &bytes, int &offset)
+{
+	if (int(offset + sizeof(qint8)) > bytes.size())
+		throw std::out_of_range(QString("attempted to read int8 at offset %1").arg(offset).toStdString());
+
+	auto ret = qint8(bytes[offset]);
+	offset += sizeof(qint8);
+	return ret;
+}
+
+qint16 int16From(QByteArray const &bytes, int &offset)
+{
+	if (int(offset + sizeof(qint16)) > bytes.size())
+		throw std::out_of_range(QString("attempted to read int16 at offset %1").arg(offset).toStdString());
+
+	auto ret = (qint16(bytes[offset + 0]) << 0)
+	         | (qint16(bytes[offset + 1]) << 8);
+	offset += sizeof(qint16);
+	return ret;
+}
+
+qint64 int64From(QByteArray const &bytes, int &offset)
+{
+	if (int(offset + sizeof(qint64)) > bytes.size())
+		throw std::out_of_range(QString("attempted to read int64 at offset %1").arg(offset).toStdString());
+
+	auto ret = (qint64(bytes[offset + 0]) << 0)
+	         | (qint64(bytes[offset + 1]) << 8)
+	         | (qint64(bytes[offset + 2]) << 16)
+	         | (qint64(bytes[offset + 3]) << 24)
+	         | (qint64(bytes[offset + 4]) << 32)
+	         | (qint64(bytes[offset + 5]) << 40)
+	         | (qint64(bytes[offset + 6]) << 48)
+	         | (qint64(bytes[offset + 7]) << 56);
+	offset += sizeof(qint64);
+	return ret;
 }
 
 } // unnamed namespace end
@@ -52,12 +111,14 @@ BGDataReceiver::BGDataReceiver(QObject *parent)
 			<< "Unable to register object at path " << DBUS_OBJECT_PATH << ":"
 			<< systemBus.lastError().message();
 	}
+
+	clearAllQuantities();
 }
 
 
 QVariant BGDataReceiver::unit() const
 {
-	return m_unitIsMGDL.has_value() ? QVariant((*m_unitIsMGDL) ? "mg/dL" : "mmol/L") : QVariant();
+	return toQVariant(m_unit);
 }
 
 
@@ -79,9 +140,9 @@ QVariant BGDataReceiver::carbsOnBoard() const
 }
 
 
-QDateTime const & BGDataReceiver::lastLoopRunTime() const
+QDateTime const & BGDataReceiver::lastLoopRunTimestamp() const
 {
-	return m_lastLoopRunTime;
+	return m_lastLoopRunTimestamp;
 }
 
 
@@ -97,80 +158,192 @@ QVariantList const & BGDataReceiver::bgTimeSeries() const
 }
 
 
-void BGDataReceiver::pushMessage(QString source, QString ID, QString body)
+QVariantList const & BGDataReceiver::basalTimeSeries() const
 {
-	MessageID messageID;
+	return m_basalTimeSeries;
+}
 
-	if (ID == "NewBGData")
-		messageID = MessageID::NEW_BG_DATA;
-	else if (ID == "BGDataUpdate")
-		messageID = MessageID::BG_DATA_UPDATE;
+
+QVariantList const & BGDataReceiver::baseBasalTimeSeries() const
+{
+	return m_baseBasalTimeSeries;
+}
+
+
+void BGDataReceiver::generateTestQuantities()
+{
+	std::random_device randomDevice;
+	std::mt19937 randomNumberGenerator(randomDevice());
+	std::bernoulli_distribution glucoseUnitDistribution(0.5);
+	std::uniform_real_distribution<float> bgValueDistribution(40.0f, 300.0f);
+	std::uniform_real_distribution<float> deltaDistribution(-30.0f, +30.0f);
+	std::bernoulli_distribution isValidBgDistribution(0.5);
+	std::uniform_real_distribution<float> basalInsulinDistributtion(-10.0f, +10.0f);
+	std::uniform_real_distribution<float> bolusInsulinDistributtion(0.0f, +10.0f);
+	std::uniform_real_distribution<float> basalRateDistribution(0.0f, 2.0f);
+	std::uniform_int_distribution<int> carbsDistribution(0, 140);
+	std::uniform_int_distribution<int> tbrDistribution(0, 400);
+	std::uniform_int_distribution<int> bgTimeSeriesStartDistribution(0, 32767);
+	std::uniform_int_distribution<int> bgTimeSeriesChangeDistribution(-4000, 4000);
+
+	clearAllQuantities();
+
+	BGStatus bgStatus;
+	bgStatus.m_bgValue = bgValueDistribution(randomNumberGenerator);
+	bgStatus.m_delta = deltaDistribution(randomNumberGenerator);
+	bgStatus.m_isValid = isValidBgDistribution(randomNumberGenerator);
+	bgStatus.m_timestamp = QDateTime::currentDateTime();
+	if (bgStatus.m_delta < -25)
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::TRIPLE_DOWN;
+	else if (bgStatus.m_delta < -18)
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::DOUBLE_DOWN;
+	else if (bgStatus.m_delta < -10)
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::SINGLE_DOWN;
+	else if (bgStatus.m_delta < -5)
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::FORTY_FIVE_DOWN;
+	else if (bgStatus.m_delta > +25)
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::TRIPLE_UP;
+	else if (bgStatus.m_delta > +18)
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::DOUBLE_UP;
+	else if (bgStatus.m_delta > +10)
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::SINGLE_UP;
+	else if (bgStatus.m_delta > +5)
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::FORTY_FIVE_UP;
 	else
+		bgStatus.m_trendArrow = BGStatus::TrendArrow::FLAT;
+
+	QVariantList bgTimeSeries;
+	int bgTimeSeriesValue = bgTimeSeriesStartDistribution(randomNumberGenerator);
+	for (int i = 0; i < 100; ++i)
 	{
-		qCDebug(lcQmlBgData) << "Got message from source"
-			<< source << "with unsupported ID" << ID
-			<< "; we do not handle such messages; ignoring";
-		return;
+		bgTimeSeries.append(QPointF(
+			float(i) / 99.0f,
+			bgTimeSeriesValue / 32767.0f
+		));
+
+		bgTimeSeriesValue += bgTimeSeriesChangeDistribution(randomNumberGenerator);
+		bgTimeSeriesValue = std::min(std::max(bgTimeSeriesValue, 0), 32767);
 	}
 
-	qCDebug(lcQmlBgData) << "Got message with source" << source << "ID" << ID << "body" << body;
+	InsulinOnBoard iob;
+	iob.m_basal = basalInsulinDistributtion(randomNumberGenerator);
+	iob.m_bolus = bolusInsulinDistributtion(randomNumberGenerator);
 
-	QJsonParseError parseError;
-	auto document = QJsonDocument::fromJson(body.toUtf8(), &parseError);
-	if (document.isNull())
-	{
-		qCWarning(lcQmlBgData) << "Could not parse incoming JSON:" << parseError.errorString();
-		return;
-	}
+	CarbsOnBoard cob;
+	cob.m_current = carbsDistribution(randomNumberGenerator);
+	cob.m_future = carbsDistribution(randomNumberGenerator);
 
-	switch (messageID)
-	{
-		case MessageID::NEW_BG_DATA:
-		{
-			resetQuantities();
+	BasalRate basalRate;
+	basalRate.m_baseRate = basalRateDistribution(randomNumberGenerator);
+	basalRate.m_currentRate = basalRateDistribution(randomNumberGenerator);
+	basalRate.m_tbrPercentage = tbrDistribution(randomNumberGenerator);
 
-			QJsonObject rootObject = document.object();
-			if (rootObject.isEmpty())
-				emit allQuantitiesCleared();
-			else
-				update(rootObject);
+	QDateTime lastLoopRunTimestamp = QDateTime::currentDateTime();
 
-			break;
-		}
+	m_unit = glucoseUnitDistribution(randomNumberGenerator) ? Unit::MG_DL : Unit::MMOL_L;
+	m_bgStatus = std::move(bgStatus);
+	m_iob = std::move(iob);
+	m_cob = std::move(cob);
+	m_lastLoopRunTimestamp = std::move(lastLoopRunTimestamp);
+	m_basalRate = std::move(basalRate);
+	m_bgTimeSeries = std::move(bgTimeSeries);
 
-		case MessageID::BG_DATA_UPDATE:
-			update(document.object());
-			break;
+	emit unitChanged();
+	emit bgStatusChanged();
+	emit insulinOnBoardChanged();
+	emit carbsOnBoardChanged();
+	emit lastLoopRunTimestampChanged();
 
-		default:
-			qCCritical(lcQmlBgData) << "Missing code for handling message with ID" << ID;
-			break;
-	}
+	emit quantitiesChanged();
 }
 
 
-void BGDataReceiver::resetQuantities()
+void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 {
-	m_unitIsMGDL = std::nullopt;
-	m_bgStatus = std::nullopt;
-	m_iob = std::nullopt;
-	m_cob = std::nullopt;
-	m_lastLoopRunTime = QDateTime();
-	m_basalRate = std::nullopt;
-	m_bgTimeSeries = QVariantList();
-}
+	qCDebug(lcQmlBgData).nospace().noquote() << "Got message; source: " << source;
 
+	if (payload.isEmpty())
+	{
+		qCWarning(lcQmlBgData) << "Got message with zero bytes in payload";
+		return;
+	}
 
-void BGDataReceiver::update(QJsonObject const &json)
-{
-	emit updateStarted();
+	// Using an epsilon of 0.005 for basal change checks. This
+	// is sufficient, because basal quantities are pretty much
+	// never given with any granularity smaller than 0.01 IU.
+	float const basalEpsilon = 0.005f;
 
-	// In here, parse the JSON object to extract the updated values.
-	// Only emit signals if the values really did change.
+	// Using an epsilon of 0.01 for BG value changes. When using
+	// mg/dL values, we never get fractional quantities, only whole
+	// numbers. (Exception: When the delta is between 0 and 1 - then
+	// 1 fractional delta digit may be used with mg/dL.)
+	// And when mmol/L are used, anything more fine grained than
+	// 0.05 mmol/L is never used.
+	// This also applies to the delta.
+	float const bgValueEpsilon = 0.01f;
 
 	try
 	{
-		parse<QJsonObject>(json, true, "basalRate", [this](auto const &basalRateJson) {
+		int offset = 0;
+
+		// At minimum, a message contains these blocks (because they are not optional):
+		qsizetype const minValidSize =
+			// The version byte
+			1 +
+			// The flags byte
+			1 +
+			// The base and current rate floats
+			4+4 +
+			// The 16-bit integer that contains the number of BG time series data points (which is 0 in the minimum case)
+			2 +
+			// The 16-bit integer that contains the number of basal time series data points (which is 0 in the minimum case)
+			2 +
+			// The 16-bit integer that contains the number of base basal time series data points (which is 0 in the minimum case)
+			2 +
+			// The basal and bolus IOB floats
+			4+4 +
+			// The current and future COB
+			2+2;
+
+		if (payload.size() < minValidSize)
+		{
+			qCWarning(lcQmlBgData)
+				<< "Got invalid data - insufficient bytes:"
+				<< "expected:" << minValidSize
+				<< "actual:" << payload.size();
+		}
+
+		// Format version number
+		qint8 version = int8From(payload, offset);
+		if (version != 1)
+		{
+			qCCritical(lcQmlBgData) << "This receiver can only handle version 1 message data";
+			return;
+		}
+
+		// Flags
+		qint8 flags = int8From(payload, offset);
+		if (flags & FLAG_MUST_CLEAR_ALL_DATA)
+		{
+			qCDebug(lcQmlBgData) << "Clearing all quantities";
+
+			clearAllQuantities();
+
+			emit unitChanged();
+			emit bgStatusChanged();
+			emit insulinOnBoardChanged();
+			emit carbsOnBoardChanged();
+			emit lastLoopRunTimestampChanged();
+
+			emit quantitiesChanged();
+
+			return;
+		}
+
+		m_unit = (flags & FLAG_UNIT_IS_MG_DL) ? Unit::MG_DL : Unit::MMOL_L;
+
+		// Basal rate
+		{
 			bool changed = false;
 
 			// Create new BasalRate instance on demand.
@@ -180,25 +353,34 @@ void BGDataReceiver::update(QJsonObject const &json)
 				m_basalRate = BasalRate();
 			}
 
-			parse<float>(basalRateJson, true, "baseRate", [this, &changed](auto baseRate) {
-				changed = changed || (m_basalRate->m_baseRate != baseRate);
-				m_basalRate->m_baseRate = baseRate;
-			});
+			float baseRate = floatFrom(payload, offset);
+			changed = changed || (std::abs(m_basalRate->m_baseRate - baseRate) >= basalEpsilon);
+			m_basalRate->m_baseRate = baseRate;
 
-			parse<int>(basalRateJson, true, "percentage", [this, &changed](auto percentage) {
-				changed = changed || (m_basalRate->m_percentage != percentage);
-				m_basalRate->m_percentage = percentage;
-			});
+			float currentRate = floatFrom(payload, offset);
+			changed = changed || (std::abs(m_basalRate->m_currentRate - currentRate) >= basalEpsilon);
+			m_basalRate->m_currentRate = currentRate;
+
+			qint16 tbrPercentage = int16From(payload, offset);
+			changed = changed || (m_basalRate->m_tbrPercentage != tbrPercentage);
+			m_basalRate->m_tbrPercentage = tbrPercentage;
 
 			if (changed)
 			{
-				qCDebug(lcQmlBgData) << "Basal rate changed: baseRate" << m_basalRate->m_baseRate << "percentage" << m_basalRate->m_percentage;
+				qCDebug(lcQmlBgData) << "Basal rate changed:"
+				                     << "baseRate" << baseRate
+				                     << "currentRate" << currentRate
+				                     << "TBR percentage" << tbrPercentage;
 				emit basalRateChanged();
 			}
-		});
+		}
 
-		parse<QJsonObject>(json, false, "bgStatus", [this](auto const &bgStatusJson) {
+		// BG status
+		if (flags & FLAG_BG_STATUS_PRESENT)
+		{
 			bool changed = false;
+
+			m_bgStatus->m_isValid = !!(flags & FLAG_BG_VALUE_IS_VALID);
 
 			// Create new BGStatus instance on demand.
 			if (!m_bgStatus.has_value())
@@ -207,119 +389,118 @@ void BGDataReceiver::update(QJsonObject const &json)
 				m_bgStatus = BGStatus();
 			}
 
-			parse<float>(bgStatusJson, true, "bgValue", [this, &changed](auto bgValue) {
-				changed = changed || (m_bgStatus->m_bgValue != bgValue);
-				m_bgStatus->m_bgValue = bgValue;
-			});
+			float bgValue = floatFrom(payload, offset);
+			changed = changed || (std::abs(m_bgStatus->m_bgValue - bgValue) >= bgValueEpsilon);
+			m_bgStatus->m_bgValue = bgValue;
+			qCDebug(lcQmlBgData) << "bgValue:" << bgValue;
 
-			parse<float>(bgStatusJson, true, "delta", [this, &changed](auto delta) {
-				changed = changed || (m_bgStatus->m_delta != delta); // TODO epsilon
-				m_bgStatus->m_delta = delta;
-			});
+			float delta = floatFrom(payload, offset);
+			changed = changed || (std::abs(m_bgStatus->m_delta - delta) >= bgValueEpsilon);
+			m_bgStatus->m_delta = delta;
+			qCDebug(lcQmlBgData) << "delta:" << delta;
 
-			parse<bool>(bgStatusJson, true, "isValid", [this, &changed](auto isValid) {
-				changed = changed || (m_bgStatus->m_isValid != isValid);
-				m_bgStatus->m_isValid = isValid;
-			});
+			QDateTime timestamp = QDateTime::fromSecsSinceEpoch(int64From(payload, offset), Qt::UTC);
+			changed = changed || (m_bgStatus->m_timestamp != timestamp);
+			m_bgStatus->m_timestamp = timestamp;
+			qCDebug(lcQmlBgData) << "timestamp:" << timestamp;
 
-			parse<qint64>(bgStatusJson, true, "timestamp", [this, &changed](auto timestampInt) {
-				auto timestamp = QDateTime::fromSecsSinceEpoch(timestampInt, Qt::UTC);
-				changed = changed || (m_bgStatus->m_timestamp != timestamp);
-				m_bgStatus->m_timestamp = timestamp;
-			});
+			BGStatus::TrendArrow trendArrow;
+			qint8 trendArrowIndex = int8From(payload, offset);
+			qCDebug(lcQmlBgData) << "trendArrowIndex:" << trendArrowIndex;
+			switch (trendArrowIndex)
+			{
+				case 0: trendArrow = BGStatus::TrendArrow::NONE; break;
+				case 1: trendArrow = BGStatus::TrendArrow::TRIPLE_UP; break;
+				case 2: trendArrow = BGStatus::TrendArrow::DOUBLE_UP; break;
+				case 3: trendArrow = BGStatus::TrendArrow::SINGLE_UP; break;
+				case 4: trendArrow = BGStatus::TrendArrow::FORTY_FIVE_UP; break;
+				case 5: trendArrow = BGStatus::TrendArrow::FLAT; break;
+				case 6: trendArrow = BGStatus::TrendArrow::FORTY_FIVE_DOWN; break;
+				case 7: trendArrow = BGStatus::TrendArrow::SINGLE_DOWN; break;
+				case 8: trendArrow = BGStatus::TrendArrow::DOUBLE_DOWN; break;
+				case 9: trendArrow = BGStatus::TrendArrow::TRIPLE_DOWN; break;
+				default:
+					qCWarning(lcQmlBgData).nospace()
+						<< "Invalid trendArrow (raw index: " << int(trendArrowIndex) << "); interpreting as \"none\" (= index 0)";
+					trendArrow = BGStatus::TrendArrow::NONE;
+					break;
+			}
 
-			parse<QString>(bgStatusJson, true, "trendArrow", [this, &changed](auto trendArrowStr) {
-				TrendArrow trendArrow;
-				bool validValue = true;
-
-				if      (trendArrowStr == "none")          trendArrow = TrendArrow::NONE;
-				else if (trendArrowStr == "tripleUp")      trendArrow = TrendArrow::TRIPLE_UP;
-				else if (trendArrowStr == "doubleUp")      trendArrow = TrendArrow::DOUBLE_UP;
-				else if (trendArrowStr == "singleUp")      trendArrow = TrendArrow::SINGLE_UP;
-				else if (trendArrowStr == "fortyFiveUp")   trendArrow = TrendArrow::FORTY_FIVE_UP;
-				else if (trendArrowStr == "flat")          trendArrow = TrendArrow::FLAT;
-				else if (trendArrowStr == "fortyFiveDown") trendArrow = TrendArrow::FORTY_FIVE_DOWN;
-				else if (trendArrowStr == "singleDown")    trendArrow = TrendArrow::SINGLE_DOWN;
-				else if (trendArrowStr == "doubleDown")    trendArrow = TrendArrow::DOUBLE_DOWN;
-				else if (trendArrowStr == "tripleDown")    trendArrow = TrendArrow::TRIPLE_DOWN;
-				else validValue = false;
-
-				if (validValue)
-				{
-					changed = changed || (m_bgStatus->m_trendArrow != trendArrow);
-					m_bgStatus->m_trendArrow = trendArrow;
-				}
-				else
-					qCWarning(lcQmlBgData) << "Skipping invalid trendArrow value" << trendArrowStr;
-			});
+			changed = changed || (m_bgStatus->m_trendArrow != trendArrow);
+			m_bgStatus->m_trendArrow = trendArrow;
 
 			if (changed)
 			{
 				qCDebug(lcQmlBgData) << "BG status changed";
 				emit bgStatusChanged();
 			}
-		});
+		}
 
-		parse<QJsonObject>(json, false, "bgTimeSeries", [this](auto const &bgTimeSeriesJson) {
-			bool valid = true;
-
-			auto valuesJson = bgTimeSeriesJson["values"];
-			if (!valuesJson.isArray())
-			{
-				qCWarning(lcQmlBgData) << "values field in bgTimeSeries JSON invalid or missing";
-				valid = false;
-			}
-
-			auto timestampsJson = bgTimeSeriesJson["timestamps"];
-			if (!timestampsJson.isArray())
-			{
-				qCWarning(lcQmlBgData) << "timestamps field in bgTimeSeries JSON invalid or missing";
-				valid = false;
-			}
-
-			QJsonArray values = valuesJson.toArray();
-			QJsonArray timestamps = timestampsJson.toArray();
-
-			if (values.count() != timestamps.count())
-			{
-				qCWarning(lcQmlBgData).nospace().noquote()
-				                       << "values and timestamps arrays have different number of items "
-				                       << "(" << values.count() << " vs. " << timestamps.count() << ")";
-				valid = false;
-			}
+		// BG time series
+		{
+			qint16 numDataPoints = int16From(payload, offset);
+			qCDebug(lcQmlBgData) << "BG time series contains" << numDataPoints << "point(s)";
 
 			m_bgTimeSeries = QVariantList();
 
-			if (valid)
+			for (int dataPointIndex = 0; dataPointIndex < numDataPoints; ++dataPointIndex)
 			{
-				for (int i = 0; i < values.count(); ++i)
-				{
-					auto timestampJson = timestamps[i];
-					if (!timestampJson.isDouble())
-					{
-						qCWarning(lcQmlBgData).nospace().noquote() << "BG timestamp #" << i << " is not a number";
-						valid = false;
-						break;
-					}
+				qint16 timestamp = int16From(payload, offset);
+				qint16 bgValue = int16From(payload, offset);
 
-					auto valueJson = values[i];
-					if (!valueJson.isDouble())
-					{
-						qCWarning(lcQmlBgData).nospace().noquote() << "BG value #" << i << " is not a number";
-						valid = false;
-						break;
-					}
-
-					m_bgTimeSeries.append(QPointF(timestampJson.toDouble() / 1000.0, valueJson.toDouble() / 1000.0));
-				}
+				m_bgTimeSeries.append(
+					QPointF(
+						double(timestamp) / 32767.0,
+						double(bgValue) / 32767.0
+					)
+				);
 			}
+		}
 
-			qCDebug(lcQmlBgData) << "BG time series changed";
+		// Basal time series
+		{
+			qint16 numDataPoints = int16From(payload, offset);
+			qCDebug(lcQmlBgData) << "Basal time series contains" << numDataPoints << "point(s)";
 
-			emit bgTimeSeriesChanged();
-		});
+			m_basalTimeSeries = QVariantList();
 
-		parse<QJsonObject>(json, true, "iob", [this](auto const &iobJson) {
+			for (int dataPointIndex = 0; dataPointIndex < numDataPoints; ++dataPointIndex)
+			{
+				qint16 timestamp = int16From(payload, offset);
+				qint16 basalValue = int16From(payload, offset);
+
+				m_basalTimeSeries.append(
+					QPointF(
+						double(timestamp) / 32767.0,
+						double(basalValue) / 32767.0
+					)
+				);
+			}
+		}
+
+		// Base basal time series
+		{
+			qint16 numDataPoints = int16From(payload, offset);
+			qCDebug(lcQmlBgData) << "Base basal time series contains" << numDataPoints << "point(s)";
+
+			m_baseBasalTimeSeries = QVariantList();
+
+			for (int dataPointIndex = 0; dataPointIndex < numDataPoints; ++dataPointIndex)
+			{
+				qint16 timestamp = int16From(payload, offset);
+				qint16 baseBasalValue = int16From(payload, offset);
+
+				m_baseBasalTimeSeries.append(
+					QPointF(
+						double(timestamp) / 32767.0,
+						double(baseBasalValue) / 32767.0
+					)
+				);
+			}
+		}
+
+		// Insulin On Board (IOB)
+		{
 			bool changed = false;
 
 			// Create new InsulinOnBoard instance on demand.
@@ -329,74 +510,67 @@ void BGDataReceiver::update(QJsonObject const &json)
 				m_iob = InsulinOnBoard();
 			}
 
-			parse<float>(iobJson, true, "basal", [this, &changed](auto basal) {
-				changed = changed || (m_iob->m_basal != basal);
-				m_iob->m_basal = basal;
-			});
+			float basal = floatFrom(payload, offset);
+			changed = changed || (std::abs(m_iob->m_basal - basal) >= basalEpsilon);
+			m_iob->m_basal = basal;
 
-			parse<float>(iobJson, true, "bolus", [this, &changed](auto bolus) {
-				changed = changed || (m_iob->m_bolus != bolus);
-				m_iob->m_bolus = bolus;
-			});
+			float bolus = floatFrom(payload, offset);
+			changed = changed || (std::abs(m_iob->m_bolus - bolus) >= basalEpsilon);
+			m_iob->m_bolus = bolus;
 
-			if (changed)
-			{
-				qCDebug(lcQmlBgData) << "IOB changed: basal" << m_iob->m_basal << "bolus" << m_iob->m_bolus;
-				emit insulinOnBoardChanged();
-			}
-		});
+			qCDebug(lcQmlBgData).nospace() << "basal/bolus IOB: " << basal << "/" << bolus;
+		}
 
-		parse<QJsonObject>(json, true, "cob", [this](QJsonObject const &cobJson) {
+		// Carbs On Board (COB)
+		{
 			bool changed = false;
 
 			// Create new CarbsOnBoard instance on demand.
-			if (!m_iob.has_value())
+			if (!m_cob.has_value())
 			{
 				changed = true;
 				m_cob = CarbsOnBoard();
 			}
 
-			parse<int>(cobJson, true, "current", [this, &changed](int current) {
-				changed = changed || (m_cob->m_current != current);
-				m_cob->m_current = current;
-			});
+			int current = int16From(payload, offset);
+			changed = changed || (m_cob->m_current != current);
+			m_cob->m_current = current;
 
-			parse<int>(cobJson, true, "future", [this, &changed](int future) {
-				changed = changed || (m_cob->m_future != future);
-				m_cob->m_future = future;
-			});
+			int future = int16From(payload, offset);
+			changed = changed || (m_cob->m_future != future);
+			m_cob->m_future = future;
 
-			if (changed)
-			{
-				qCDebug(lcQmlBgData) << "COB changed: current" << m_cob->m_current << "future" << m_cob->m_future;
-				emit carbsOnBoardChanged();
-			}
-		});
+			qCDebug(lcQmlBgData).nospace() << "current/future IOB: " << current << "/" << future;
+		}
 
-		parse<qint64>(json, false, "lastLoopRunTime", [this](auto lastLoopRunTimeInt) {
-			auto lastLoopRunTime = QDateTime::fromSecsSinceEpoch(lastLoopRunTimeInt, Qt::UTC);
-			if (m_lastLoopRunTime == lastLoopRunTime)
-				return;
+		// Last loop run timestamp
+		if (flags & FLAG_LAST_LOOP_RUN_TIMESTAMP_PRESENT)
+		{
+			bool changed = false;
 
-			m_lastLoopRunTime = lastLoopRunTime;
-			qCDebug(lcQmlBgData) << "lastLoopRunTime changed:" << lastLoopRunTime;
-			emit lastLoopRunTimeChanged();
-		});
+			QDateTime lastLoopRunTimestamp = QDateTime::fromSecsSinceEpoch(int64From(payload, offset), Qt::UTC);
+			changed = changed || (m_lastLoopRunTimestamp != lastLoopRunTimestamp);
+			m_lastLoopRunTimestamp = lastLoopRunTimestamp;
 
-		parse<QString>(json, true, "unit", [this](QString unit) {
-			bool unitIsMGDL = (unit == "mgdl");
-			if (m_unitIsMGDL == unitIsMGDL)
-				return;
+			qCDebug(lcQmlBgData) << "lastLoopRunTimestamp:" << lastLoopRunTimestamp;
+		}
 
-			m_unitIsMGDL = unitIsMGDL;
-			qCDebug(lcQmlBgData) << "Unit changed:" << unit;
-			emit unitChanged();
-		});
+		emit quantitiesChanged();
 	}
-	catch (JSONError const &e)
+	catch (std::out_of_range const &e)
 	{
-		qCWarning(lcQmlBgData) << "Error while parsing JSON: " << e.what();
+		qCWarning(lcQmlBgData).noquote() << "Got out-of-range error while parsing data:" << e.what();
 	}
+}
 
-	emit updateEnded();
+
+void BGDataReceiver::clearAllQuantities()
+{
+	m_unit = std::nullopt;
+	m_bgStatus = std::nullopt;
+	m_iob = std::nullopt;
+	m_cob = std::nullopt;
+	m_lastLoopRunTimestamp = QDateTime();
+	m_basalRate = std::nullopt;
+	m_bgTimeSeries = QVariantList();
 }
