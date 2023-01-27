@@ -254,7 +254,10 @@ void BGDataReceiver::generateTestQuantities()
 	emit carbsOnBoardChanged();
 	emit lastLoopRunTimestampChanged();
 
-	emit quantitiesChanged();
+	emit newDataReceived();
+}
+
+
 QVariant BGDataReceiver::getTimespansSince(QDateTime now)
 {
 	if (!now.isValid())
@@ -354,7 +357,7 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 			emit carbsOnBoardChanged();
 			emit lastLoopRunTimestampChanged();
 
-			emit quantitiesChanged();
+			emit newDataReceived();
 
 			return;
 		}
@@ -574,7 +577,7 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 			qCDebug(lcQmlBgData) << "lastLoopRunTimestamp:" << lastLoopRunTimestamp;
 		}
 
-		emit quantitiesChanged();
+		emit newDataReceived();
 	}
 	catch (std::out_of_range const &e)
 	{

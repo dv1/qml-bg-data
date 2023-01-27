@@ -60,7 +60,7 @@ Item {
 	BGDataReceiver {
 		id: bgDataReceiver
 
-		onQuantitiesChanged: {
+		onNewDataReceived: {
 			console.log("Got new BG data")
 
 			if (bgStatus == null) {

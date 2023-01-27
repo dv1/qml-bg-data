@@ -156,7 +156,7 @@ public:
 	Q_INVOKABLE QVariant getTimespansSince(QDateTime now);
 
 signals:
-	void quantitiesChanged();
+	void newDataReceived();
 
 	void unitChanged();
 	void bgStatusChanged();
