@@ -255,6 +255,25 @@ void BGDataReceiver::generateTestQuantities()
 	emit lastLoopRunTimestampChanged();
 
 	emit quantitiesChanged();
+QVariant BGDataReceiver::getTimespansSince(QDateTime now)
+{
+	if (!now.isValid())
+	{
+		qCWarning(lcQmlBgData) << "getTimespansSince() called with invalid datetime; returning invalid values";
+		return QVariant::fromValue(Timespans());
+	}
+
+	Timespans timespans;
+
+	auto nowInSecsSinceEpoch = now.toSecsSinceEpoch();
+
+	if (m_bgStatus.has_value() && (m_bgStatus->m_timestamp.isValid()))
+		timespans.m_bgStatusUpdate = nowInSecsSinceEpoch - m_bgStatus->m_timestamp.toSecsSinceEpoch();
+
+	if (m_lastLoopRunTimestamp.isValid())
+		timespans.m_lastLoopRun = nowInSecsSinceEpoch - m_lastLoopRunTimestamp.toSecsSinceEpoch();
+
+	return QVariant::fromValue(timespans);
 }
 
 

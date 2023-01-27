@@ -82,6 +82,18 @@ public:
 	int m_tbrPercentage = 100;
 };
 
+struct Timespans
+{
+	Q_GADGET
+
+	Q_PROPERTY(QVariant bgStatusUpdate MEMBER m_bgStatusUpdate)
+	Q_PROPERTY(QVariant lastLoopRun MEMBER m_lastLoopRun)
+
+public:
+	QVariant m_bgStatusUpdate;
+	QVariant m_lastLoopRun;
+};
+
 class BGDataReceiver
 	: public QObject
 {
@@ -120,6 +132,28 @@ public:
 	QVariantList const & baseBasalTimeSeries() const;
 
 	Q_INVOKABLE void generateTestQuantities();
+
+	/**
+	 * Returns the times in seconds since certain actions were taken.
+	 *
+	 * The return value is a Timespans instance (wrapped in a QVariant)
+	 * that contains the seconds since the BG status was received (if
+	 * any was received) and the seconds since the last time the
+	 * closed-loop system was run. If this cannot be determined (because
+	 * for example no BG status has been received so far), then the
+	 * corresponding field in the returned Timespans instance is set
+	 * to an empty QVariant value, which maps to null in QML.
+	 *
+	 * These timespans are calculated based on the "now" timestamp.
+	 * That is, the times from the past actions until the "now" timestamp
+	 * is calculated (in seconds) and stored in the corresponding
+	 * Timespans fields.
+	 *
+	 * @param now Reference timestamp to calculate timespans against.
+	 *   This must always be a valid timestamp.
+	 * @return Timespans instance, wrapped in a QVariant.
+	 */
+	Q_INVOKABLE QVariant getTimespansSince(QDateTime now);
 
 signals:
 	void quantitiesChanged();
