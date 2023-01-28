@@ -32,80 +32,60 @@ Item {
 		}
 	}
 
-	function calcHowManyMinutesAgo(timestamp, now) {
-		return Math.trunc(Math.max((now - timestamp) / 1000 / 60, 0));
-	}
-
 	Timer {
 		id: minutesAgoUpdatesTimer
 
-		interval: 500
+		interval: 30 * 1000
 		running: false
 		repeat: true
 		triggeredOnStart: true
 
 		onTriggered: {
-			var now = (new Date()).getTime();
+			var timespans = bgDataReceiver.getTimespansSince(new Date());
+
+			if ((timespans.bgStatusUpdate == null) && (timespans.lastLoopRun == null))
+				stop();
+
 			minutesAgoText.text = "";
-			if (lastBgStatusTS != null)
-				minutesAgoText.text += "lBG: " + calcHowManyMinutesAgo(lastBgStatusTS.getTime(), now) + " ";
-			if (lastLoopRunTS != null)
-				minutesAgoText.text += "lLoop: " + calcHowManyMinutesAgo(lastLoopRunTS, now);
+
+			if (timespans.bgStatusUpdate != null)
+				minutesAgoText.text += "lBG: " + parseInt(timespans.bgStatusUpdate / 60) + " ";
+			if (timespans.lastLoopRun != null)
+				minutesAgoText.text += "lLoop: " + parseInt(timespans.lastLoopRun / 60);
 		}
 	}
-
-	property var lastBgStatusTS: null
-	property var lastLoopRunTS: null
 
 	BGDataReceiver {
 		id: bgDataReceiver
 
 		onNewDataReceived: {
-			console.log("Got new BG data")
-
-			if (bgStatus == null) {
-				minutesAgoUpdatesTimer.stop();
-				lastBgStatusTS = null;
-				lastLoopRunTS = null;
-				minutesAgoText.text = "";
-
-				bgValueAndTrendArrowText.unit = null;
-				bgValueAndTrendArrowText.bgValue = null;
-				bgValueAndTrendArrowText.bgValueIsValid = false;
-				bgValueAndTrendArrowText.trendArrow = BGStatus.TrendArrow.NONE;
-				bgValueAndTrendArrowText.delta = null;
-
-				basalAndTbrText.baseRate = 0;
-				basalAndTbrText.currentDate = 0;
-				basalAndTbrText.tbrPercentage = 100;
-			} else {
-				bgValueAndTrendArrowText.unit = unit;
-				bgValueAndTrendArrowText.bgValue = bgStatus.bgValue;
-				bgValueAndTrendArrowText.bgValueIsValid = bgStatus.isValid;
-				bgValueAndTrendArrowText.trendArrow = bgStatus.trendArrow;
-				bgValueAndTrendArrowText.delta = bgStatus.delta;
-
-				basalAndTbrText.baseRate = basalRate.baseRate;
-				basalAndTbrText.currentRate = basalRate.currentRate;
-				basalAndTbrText.tbrPercentage = basalRate.tbrPercentage;
-
-				iobAndCobText.basal = insulinOnBoard.basal;
-				iobAndCobText.bolus = insulinOnBoard.bolus;
-				iobAndCobText.currentCarbs = carbsOnBoard.current;
-				iobAndCobText.futureCarbs = carbsOnBoard.future;
-
-				bgTimeSeriesView.timeSeries = bgTimeSeries;
-
-				lastBgStatusTS = bgStatus.timestamp;
-				lastLoopRunTS = lastLoopRunTimestamp;
-
-				minutesAgoUpdatesTimer.restart();
-			}
+			bgTimeSeriesView.bgTimeSeries = bgTimeSeries;
+			minutesAgoUpdatesTimer.restart();
 		}
 
-		/* Component.onCompleted: {
+		onUnitChanged: {
+			bgValueAndTrendArrowText.unit = unit;
+		}
+
+		onBgStatusChanged: {
+			bgValueAndTrendArrowText.bgStatus = bgStatus;
+		}
+
+		onInsulinOnBoardChanged: {
+			iobAndCobText.iob = insulinOnBoard;
+		}
+
+		onCarbsOnBoardChanged: {
+			iobAndCobText.cob = carbsOnBoard;
+		}
+
+		onBasalRateChanged: {
+			basalAndTbrText.basalRate = basalRate;
+		}
+
+		Component.onCompleted: {
 			bgDataReceiver.generateTestQuantities()
-		} */
+		}
 	}
 
 	Item {
@@ -134,11 +114,8 @@ Item {
 		Text {
 			id: bgValueAndTrendArrowText
 
+			property var bgStatus: null
 			property var unit: null
-			property var bgValue: null
-			property bool bgValueIsValid: false
-			property int trendArrow: BGStatus.TrendArrow.NONE
-			property var delta: null
 
 			x: 0
 			y: parent.height * 0.2
@@ -151,28 +128,26 @@ Item {
 			verticalAlignment: Text.AlignVCenter
 
 			text: {
-				if (bgValue == null) {
-					text = "";
-					return;
-				}
+				if (bgStatus == null)
+					return "";
 
 				var unitLabel = (unit == BGDataReceiver.Unit.MG_DL) ? "mg/dL" : "mmol/L";
-				var text = roundTo1Digit(bgValue) + " " + unitLabel + " " + trendArrowCharacter(trendArrow);
+				var s = roundTo1Digit(bgStatus.bgValue) + " " + unitLabel + " " + trendArrowCharacter(bgStatus.trendArrow);
 
-				if (delta != null)
-					text += " Δ: " + roundTo1Digit(delta);
+				if (bgStatus.delta != null)
+					s += " Δ: " + roundTo1Digit(bgStatus.delta);
+				else
+					s += " Δ: N/A";
 
-				return text;
+				return s;
 			}
-			font.strikeout: !bgValueIsValid
+			font.strikeout: (bgStatus != null) ? !(bgStatus.isValid) : false
 		}
 
 		Text {
 			id: basalAndTbrText
 
-			property real baseRate: 0.0
-			property real currentRate: 0.0
-			property int tbrPercentage: 100
+			property var basalRate: null
 
 			x: 0
 			y: parent.height * 0.4
@@ -184,16 +159,19 @@ Item {
 			horizontalAlignment: Text.AlignHCenter
 			verticalAlignment: Text.AlignVCenter
 
-			text: "basal: base " + roundTo2Digits(baseRate) + " cur " + roundTo2Digits(currentRate) + " " + tbrPercentage + "%";
+			text: {
+				if (basalRate != null)
+					return "basal: base " + roundTo2Digits(basalRate.baseRate) + " cur " + roundTo2Digits(basalRate.currentRate) + " " + basalRate.tbrPercentage + "%";
+				else
+					return "";
+			}
 		}
 
 		Text {
 			id: iobAndCobText
 
-			property real basal: 0.0
-			property real bolus: 0.0
-			property int currentCarbs: 0
-			property int futureCarbs: 0
+			property var iob: null
+			property var cob: null
 
 			x: 0
 			y: parent.height * 0.6
@@ -205,8 +183,16 @@ Item {
 			horizontalAlignment: Text.AlignHCenter
 			verticalAlignment: Text.AlignVCenter
 
-			text: "IOB: " + roundTo2Digits(basal + bolus) + "(" + roundTo2Digits(basal) + "|" + roundTo2Digits(bolus) + ") "
-			    + "COB: " + currentCarbs + "|" + futureCarbs;
+			text: {
+				var s = "";
+
+				if (iob != null)
+					s += "IOB: " + roundTo2Digits(iob.basal + iob.bolus) + "(" + roundTo2Digits(iob.basal) + "|" + roundTo2Digits(iob.bolus) + ") ";
+				if (cob != null)
+					s += "COB: " + cob.current + "|" + cob.future;
+
+				return s;
+			}
 		}
 
 		Rectangle {
