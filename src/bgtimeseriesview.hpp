@@ -6,13 +6,61 @@
 #include <QVariant>
 
 
+/*!
+	\class BGTimeSeriesView
+	\brief Graphical Quick item for drawing BG time series data coming from \c BGDataReceiver.
+
+	This class implements a Qt Quick item that renders \c BGDataReceiver BG time series
+	as a graph. This graph is simplified if the item's with is too small for the amount
+	of time series data to improve graph readability.
+
+	To use, assign the value of \c {BGDataReceiver.bgTimeSeries} to this item's
+	\c bgTimeSeries property every time new BG time series become available. Typically,
+	the way to go is to do this assignment in a \c {BGDataReceiver.newDataReceived}
+	signal handler, like this:
+
+	\qml
+		BGDataReceiver {
+			onNewDataReceived: {
+				bgTimeSeriesView.bgTimeSeries = bgTimeSeries;
+			}
+		}
+
+		BGTimeSeriesView {
+			id: bgTimeSeriesView
+		}
+	\endqml
+
+	The item does not render any background; only the line graph itself is drawn,
+	with the color specified by the \c color property.
+*/
 class BGTimeSeriesView
 	: public QQuickItem
 {
 	Q_OBJECT
 
+	/*!
+		\property BGTimeSeriesView::color
+		\brief Color of the line graph.
+
+		The default color is black. The alpha channel is suppported,
+		so semi-translucent graphs are possible.
+	*/
 	Q_PROPERTY(QColor color READ color WRITE setColor)
+
+	/*!
+		\property BGTimeSeriesView::lineWidth
+		\brief Width (or thickness) of the lines that make up the graph, in pixels.
+
+		\note A line width other than 1.0 may not always be supported. This is
+		decided by the GPU and GPU driver support. This limitation is being worked on.
+	*/
 	Q_PROPERTY(float lineWidth READ lineWidth WRITE setLineWidth)
+
+	/*!
+		\property BGTimeSeriesView::bgTimeSeries
+		\brief The BG time series to render.
+	*/
 	Q_PROPERTY(QVariantList bgTimeSeries READ bgTimeSeries WRITE setBGTimeSeries)
 
 public:
