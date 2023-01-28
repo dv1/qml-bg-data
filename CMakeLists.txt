@@ -14,6 +14,14 @@ set(CMAKE_AUTORCC ON)
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DQMLBGDATA_DEBUG_BUILD")
 
+# From https://gitlab.kitware.com/vtk/vtk/-/blob/master/CMakeLists.txt
+set(CMAKE_INSTALL_QMLDIR "" CACHE PATH "QML files (LIBDIR/qml)")
+mark_as_advanced(CMAKE_INSTALL_QMLDIR)
+if (NOT CMAKE_INSTALL_QMLDIR)
+	set(CMAKE_INSTALL_QMLDIR "${CMAKE_INSTALL_LIBDIR}/qml")
+endif ()
+
+
 include(CheckTypeSize)
 include(FindPkgConfig)
 
@@ -41,7 +49,7 @@ add_library(qmlbgdata SHARED ${qmlbgdata_SOURCES})
 target_link_libraries(qmlbgdata Qt5::Core Qt5::DBus Qt5::Qml Qt5::Quick)
 target_compile_options(qmlbgdata PRIVATE -Wextra -Wall -pedantic)
 
-set(PLUGIN_PATH ${QT_DIR}/qml/QmlBgData)
+set(PLUGIN_PATH ${CMAKE_INSTALL_QMLDIR}/QmlBgData)
 
 install(TARGETS ${PROJECT_NAME} DESTINATION ${PLUGIN_PATH})
 install(FILES resources/qml/qmldir DESTINATION ${PLUGIN_PATH})
