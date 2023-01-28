@@ -6,9 +6,6 @@
 #include <QVariant>
 
 
-class QSGTexture;
-
-
 class BGTimeSeriesView
 	: public QQuickItem
 {

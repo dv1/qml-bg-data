@@ -281,6 +281,8 @@ public:
 	is to pass them to the corresponding properties in a \c BGTimeSeriesView. The whole
 	point of these time series is visualization, which \c BGTimeSeriesView takes care of.
 
+	NOTE: The basalTimeSeries and baseBasalTimeSeries properties are currently not in use.
+
 	When new BG data is received, the class checks which parts of the BG data actually
 	changed. If for example a new BG status is contained in the BG data, but it turns
 	out that compared to the currently already available BGStatus information, nothing

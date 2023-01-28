@@ -205,7 +205,7 @@ Item {
 			border.width: 1
 			color: "transparent"
 
-			TimeSeriesView {
+			BGTimeSeriesView {
 				id: bgTimeSeriesView
 				anchors.fill: parent
 				color: "black"
