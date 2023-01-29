@@ -561,6 +561,12 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 			m_iob->m_bolus = bolus;
 
 			qCDebug(lcQmlBgData).nospace() << "basal/bolus IOB: " << basal << "/" << bolus;
+
+			if (changed)
+			{
+				qCDebug(lcQmlBgData) << "Insulin On Board (IOB) changed";
+				emit insulinOnBoardChanged();
+			}
 		}
 
 		// Carbs On Board (COB)
@@ -583,6 +589,12 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 			m_cob->m_future = future;
 
 			qCDebug(lcQmlBgData).nospace() << "current/future IOB: " << current << "/" << future;
+
+			if (changed)
+			{
+				qCDebug(lcQmlBgData) << "Carbs On Board (COB) changed";
+				emit carbsOnBoardChanged();
+			}
 		}
 
 		// Last loop run timestamp
