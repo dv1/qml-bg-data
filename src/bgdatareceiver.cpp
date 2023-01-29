@@ -361,6 +361,7 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 			emit insulinOnBoardChanged();
 			emit carbsOnBoardChanged();
 			emit lastLoopRunTimestampChanged();
+			emit basalRateChanged();
 
 			emit newDataReceived();
 
