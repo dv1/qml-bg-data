@@ -313,31 +313,9 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 	{
 		int offset = 0;
 
-		// At minimum, a message contains these blocks (because they are not optional):
-		qsizetype const minValidSize =
-			// The version byte
-			1 +
-			// The flags byte
-			1 +
-			// The base and current rate floats
-			4+4 +
-			// The 16-bit integer that contains the number of BG time series data points (which is 0 in the minimum case)
-			2 +
-			// The 16-bit integer that contains the number of basal time series data points (which is 0 in the minimum case)
-			2 +
-			// The 16-bit integer that contains the number of base basal time series data points (which is 0 in the minimum case)
-			2 +
-			// The basal and bolus IOB floats
-			4+4 +
-			// The current and future COB
-			2+2;
-
-		if (payload.size() < minValidSize)
+		if (payload.size() < 2)
 		{
-			qCWarning(lcQmlBgData)
-				<< "Got invalid data - insufficient bytes:"
-				<< "expected:" << minValidSize
-				<< "actual:" << payload.size();
+			qCWarning(lcQmlBgData) << "Got insufficient header data: expected 2 bytes (version and flag bytes), got" << payload.size();
 		}
 
 		// Format version number
@@ -366,6 +344,33 @@ void BGDataReceiver::pushMessage(QString source, QByteArray payload)
 			emit newDataReceived();
 
 			return;
+		}
+
+		// At minimum, a non-"clear-all-data" message contains these blocks (because they are not optional):
+		qsizetype const minValidSize =
+			// The version byte
+			1 +
+			// The flags byte
+			1 +
+			// The base and current rate floats
+			4+4 +
+			// The 16-bit integer that contains the number of BG time series data points (which is 0 in the minimum case)
+			2 +
+			// The 16-bit integer that contains the number of basal time series data points (which is 0 in the minimum case)
+			2 +
+			// The 16-bit integer that contains the number of base basal time series data points (which is 0 in the minimum case)
+			2 +
+			// The basal and bolus IOB floats
+			4+4 +
+			// The current and future COB
+			2+2;
+
+		if (payload.size() < minValidSize)
+		{
+			qCWarning(lcQmlBgData)
+				<< "Got invalid BG payload data - insufficient bytes:"
+				<< "expected:" << minValidSize
+				<< "actual:" << payload.size();
 		}
 
 		// Unit
